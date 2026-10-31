@@ -1,0 +1,13 @@
+Timeline replaces your handheld's home screen with the consoles you own games for, in the order they came out, from the Atari 2600 to the Wii. Pick a console, pick a game, and it opens in the right emulator with the right settings already in place.
+
+First-time setup does the work: it makes your games folder, installs RetroArch, Dolphin and ARMSX2 from their own developers (checked against their signing certificates), offers melonDS for DS games on two screens, names the RetroArch cores to download, fetches the shader collection, and checks the files a few consoles need from the console itself.
+
+The picture of the era: the signal each console reached a television by, five CRT looks, Blur Busters' beam simulator on 120 Hz screens, clean 3D with real scanlines, a 480-line look for GameCube and Wii, and LCD looks for the Game Boy family.
+
+Less lag, measured: a frame sooner on the 8 and 16-bit consoles, a shorter picture queue, and sound 80 ms sooner on cartridge consoles.
+
+Saves copied to your SD card each time you come back from a game, with earlier versions kept. Shelves of your own, favorites, finished games, search, and the games that came out on this day.
+
+Timeline includes no games, BIOS files or emulators. You bring your games, from things you own. It has no account and collects nothing.
+
+Free software under the GPL, from NOSTOS, a retro video game and vintage store in Duluth, Georgia.

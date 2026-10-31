@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2026 NOSTOS, LLC -->
+<!-- Games are handed to standalone emulators by content address. Only shared storage, where games live, is offered. -->
+<paths>
+    <root-path name="storage" path="storage/" />
+</paths>
