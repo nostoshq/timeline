@@ -30,7 +30,8 @@ yourself from the developers' site; setup moves on once it is installed.
 
 **A game stutters, or its sound crackles.** If the top of Timeline's screen says **Battery saver on**, that is the
 reason: Android's battery saver holds the processor back. Switch it off in Android's quick settings. Otherwise, close
-other apps in the background: **Settings, Close everything in the background**.
+other apps in the background: **Settings, Close everything in the background**. A game whose last sitting had more
+than 5% of its pictures late says so on its page (Retroid devices), and X there runs it lighter.
 
 **A PlayStation, Saturn, Sega CD or TurboGrafx-CD game opens the Console files page instead of starting.** That
 console can't start without a file from the console itself, and Timeline didn't find one. The page says which file

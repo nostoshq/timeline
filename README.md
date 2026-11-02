@@ -80,7 +80,7 @@ a single choice in Settings, Picture, Signal, and you can change any of them.
 |---|---|---|
 | A button press on the 8 and 16-bit consoles | the next frame | a frame sooner (preemptive frames) |
 | A picture leaving RetroArch for the screen | 31.6 ms | 23.2 ms |
-| Sound on the cartridge consoles | RetroArch's 128 ms buffer | 48 ms |
+| Sound in RetroArch (all but the DS) | RetroArch's 128 ms buffer | 48 ms |
 
 Measured on a Retroid Pocket Nova at 120 Hz, still and with a button changing thirty times a second: no late
 pictures on any of them. [How it was measured](docs/lag.md).
@@ -95,7 +95,8 @@ needn't be the only one.
 
 In your hands, the handheld's own controls are player one, and each controller you connect takes the next player; in
 GameCube and Wii games, the first controller you connect also plays as player one.
-Docked to a television, games are set for its refresh rate as they start. Timeline runs on 4:3 handhelds like the
+Docked to a television, games are set for 60 Hz, which every television shows, and the phosphor mask is drawn wider
+so the dock's scaling doesn't make it shimmer. Timeline runs on 4:3 handhelds like the
 Retroid Pocket Nova and on 16:9 ones, using the whole screen.
 
 <p align="center">

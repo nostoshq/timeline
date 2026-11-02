@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.0
+
+- **Docked: 60 Hz, and a mask that holds still.** Docked to a television, games are always set for 60 Hz, which every
+  television shows; the 120 Hz choice is gone. **Settings, Display, Television**: 60 Hz asks a television showing
+  another rate for 60, its own choice leaves it as it is. Under 4K, the phosphor mask is drawn two screen columns to a
+  stripe, so the dock's scaling no longer makes it shimmer.
+- **Sound sooner on the 3D consoles.** PlayStation, Nintendo 64, Saturn and Dreamcast now get the 48 ms sound buffer
+  too, about 80 ms sooner, after a first minute of Banjo-Kazooie, Crash Bandicoot, Panzer Dragoon II and Crazy Taxi
+  with no underrun.
+- **A stutter log** (Retroid devices). Android's own frame record is switched on as a game starts and read when you come
+  back, so nothing runs beside the game. A game whose last sitting had more than 5% of its pictures late says so on
+  its page, and X runs it lighter.
+- **Emulators left in the background.** The memory check now runs before every game, not only before the big
+  emulators' games: a Dolphin left up from a GameCube sitting was enough to drop a Nintendo 64 game's frames and sound
+  in its first minutes. A Dolphin holding no game is closed as you come back to Timeline, and is no longer left awake
+  after its saves are copied.
+- The Nintendo 64 names OpenGL in its settings outright.
+
 ## 1.2.0
 
 - **A CRT you can see.** The tube is now drawn as one seen up close, its phosphors in view and not only its lines:

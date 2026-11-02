@@ -620,11 +620,11 @@ object DolphinWatch {
      * slow to end (flushing its memory card or shader cache under memory pressure) still works or writes, and is left
      * alone. Shell builtins (read) rather than a program per file, so it stays quick under memory pressure.
      */
-    fun script(pkg: String): String = """
+    fun script(pkg: String, marker: String = DOLPHIN): String = """
         p=${'$'}(pidof $pkg | cut -d' ' -f1)
         [ -n "${'$'}p" ] || { echo none; exit 0; }
         g=""
-        for t in /proc/${'$'}p/task/*; do n=""; read -r n < ${'$'}t/comm; [ "${'$'}n" = "NativeEmulation" ] && g=${'$'}t; done
+        for t in /proc/${'$'}p/task/*; do n=""; read -r n < ${'$'}t/comm; [ "${'$'}n" = "$marker" ] && g=${'$'}t; done
         [ -n "${'$'}g" ] || { echo idle; exit 0; }
         work() {
           l=""; read -r l < /proc/${'$'}p/stat; set -- ${'$'}l; c=${'$'}((${'$'}{14} + ${'$'}{15}))
@@ -644,10 +644,13 @@ object DolphinWatch {
     /** Reads the last word the script printed: "none", "idle", "game" or "frozen"; null when it could not be asked. */
     fun parse(out: String?): String? = out?.trim()?.lines()?.lastOrNull()?.trim()?.takeIf { it in setOf("none", "idle", "game", "frozen") }
 
-    @Synchronized fun state(ctx: Context, pkg: String): String? {
+    /** The thread Dolphin runs only while it holds a game. */
+    const val DOLPHIN = "NativeEmulation"
+
+    @Synchronized fun state(ctx: Context, pkg: String, marker: String = DOLPHIN): String? {
         if (!PACKAGE.matches(pkg)) return null
-        val file = java.io.File(ctx.filesDir, "dolphin-state.sh")
-        if (!Scripts.write(file, script(pkg))) return null
+        val file = java.io.File(ctx.filesDir, if (marker == DOLPHIN) "dolphin-state.sh" else "emulator-state.sh")
+        if (!Scripts.write(file, script(pkg, marker))) return null
         return parse(Bridge.read("timeout 9 sh ${file.absolutePath}"))
     }
 }

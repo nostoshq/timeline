@@ -1824,11 +1824,47 @@ class ExtrasTest {
         for (src in listOf(Colour.slang, Colour.glsl)) assertTrue(src.contains("W8000") && src.contains("tl_white") && !src.contains("\$"))
     }
 
+    @Test fun dockedTheStripesWidenUnder4k() {
+        // The dock scales the Nova's 960 rows to the television: under 1920 lines the phosphors are two columns wide
+        assertEquals(1, RetroPack.maskStep(Look()))
+        assertEquals(2, RetroPack.maskStep(Look(tv = true, tvLines = 1080)))
+        assertEquals(2, RetroPack.maskStep(Look(tv = true, tvLines = 1440)))
+        assertEquals(1, RetroPack.maskStep(Look(tv = true, tvLines = 2160)))
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        assertTrue(RetroPack.files(Look(), p).getValue("Snes9x/Snes9x.slangp").contains("masksize = \"1.0\""))
+        val docked = RetroPack.files(Look(tv = true, tvLines = 1080, hz = 60), p)
+        assertTrue(docked.getValue("Snes9x/Snes9x.slangp").contains("masksize = \"2.0\""))
+        assertEquals(2, RetroPack.tvLook(Look(tv = true, tvLines = 1080), "gcwii").stripe)
+        assertTrue(Crt3d.dolphin(1.0, 0, "2.0", 0.5, 2).contains("#define OPT_STRIPE 2.0"))
+        assertTrue(Tv480.preset(1.0, 0, "2.0", 0.5, 2).contains("tv_stripe = \"2.0\""))
+        assertTrue(Tv480.slang.contains("#pragma parameter tv_stripe") && Tv480.slang.contains("#define OPT_STRIPE params.tv_stripe"))
+        // and at 60 Hz there is no beam or black frames for the television to run at half speed
+        assertTrue(docked.getValue("Snes9x/Snes9x.cfg").contains("video_shader_subframes = \"1\"") && docked.getValue("Snes9x/Snes9x.cfg").contains("video_black_frame_insertion = \"0\""))
+    }
+
+    @Test fun aSittingThatStutteredIsToldFromTheScreensRecord() {
+        val dump = "SurfaceFlinger TimeStats:\ntotalFrames = 3000\npresentToPresent histogram is as below:\n" +
+            "0ms=0 8ms=2900 9ms=20 16ms=60 25ms=15 150ms=5\naverageFrameDuration = 1.2 ms\n"
+        val h = Stutter.histogram(dump)
+        assertEquals(2900, h[8]); assertEquals(5, h[150])
+        val s = Stutter.of(h, 120, drawnOnly = false)!!
+        assertEquals(3000, s.frames); assertEquals(80, s.late)                 // 16, 25 and 150 ms at 120 Hz
+        assertTrue(s.percent > 2.6 && s.percent < 2.7)
+        // Dolphin's 30-a-second game at 120: its own pace is not late, a long stall is
+        val dol = Stutter.of(mapOf(33 to 1800, 41 to 100, 66 to 40, 100 to 10), 120, drawnOnly = true)!!
+        assertEquals(10, dol.late)
+        // too little to go by
+        assertNull(Stutter.of(mapOf(8 to 500), 120, false))
+        assertEquals(2.7, Stutter.percentOf(Stutter.format(Stutter.Sitting(3000, 80), 1L))!!, 0.001)
+        assertNull(Stutter.percentOf(""))
+        assertEquals(60, Stutter.histogram("0ms=0 8ms=2900 16ms=60\n")[16])          // the one line the device sends back
+    }
+
     @Test fun gameCubeWiiAndPs2GetATelevisionsFourHundredEightyLines() {
         val dol = Crt3d.dolphin(0.25, 2, "2.0", 0.0)
         // GameCube and Wii send 480 lines: a 480-line raster, its beams and gaps in light, and the phosphor grille on the panel's columns
         assertTrue(dol.contains("RASTER = 480.0") && dol.contains("dFdy(GetCoordinates().y)") && dol.contains("float3 tv(") && dol.contains("whiteOf("))
-        assertTrue(dol.contains("mod(floor(frag.x), 3.0)"))
+        assertTrue(dol.contains("mod(floor(frag.x / OPT_STRIPE), 3.0)") && dol.contains("#define OPT_STRIPE 1.0"))
         assertTrue(dol.contains("OptionName = lines\nMinValue = 0.0\nMaxValue = 1.0\nStepAmount = 0.05\nDefaultValue = 0.25\n"))
         assertTrue(dol.contains("OptionName = mask\nMinValue = 0.0\nMaxValue = 0.8\n"))
         assertTrue(dol.contains("OptionName = mask") && dol.contains("OptionName = signal") && !dol.contains("\${"))
@@ -1870,8 +1906,10 @@ class ExtrasTest {
 
     @Test fun oneBigEmulatorAtATimeClosesOnlyWhatIsSurelyIdle() {
         fun o(id: String, running: Boolean?, held: String? = null, idle: Boolean = false) = Memory.Other("pkg.$id", id, running, held, idle)
-        // a small target: nothing looked at
-        assertEquals(Memory.Step.Go, Memory.decide("ra:snes9x", listOf(o("armsx2", true))))
+        // a small target is looked after too: an idle Dolphin behind an N64 game is closed, a running ARMSX2 asked about
+        assertEquals(Memory.Step.Close(listOf("pkg.dolphin")), Memory.decide("ra:mupen64plus_next", listOf(o("dolphin", true, idle = true))))
+        assertEquals(Memory.Step.Ask("pkg.armsx2", "armsx2", null), Memory.decide("ra:snes9x", listOf(o("armsx2", true))))
+        assertEquals(Memory.Step.Go, Memory.decide("ra:snes9x", listOf(o("dolphin", false), o("melonds", true))))
         // Dolphin with its game thread gone: closed without a word
         assertEquals(Memory.Step.Close(listOf("pkg.dolphin")), Memory.decide("armsx2", listOf(o("dolphin", true, idle = true))))
         // any other big emulator running, game known or not: asked about, the named one first
@@ -1898,8 +1936,8 @@ class ExtrasTest {
             assertTrue(core, cfg.contains("preemptive_frames_enable = \"true\"") && cfg.contains("run_ahead_enabled = \"false\"") && cfg.contains("run_ahead_frames = \"1\""))
             assertTrue(core, cfg.contains("audio_latency = \"48\""))              // and their sound sooner
         }
-        for (core in listOf("SwanStation", "Beetle Saturn", "Flycast", "Mupen64Plus-Next"))   // the 3D consoles keep RetroArch's own
-            assertFalse(core, on.getValue("$core/$core.cfg").contains("audio_latency"))
+        for (core in listOf("SwanStation", "Beetle PSX HW", "Beetle Saturn", "Flycast", "Mupen64Plus-Next"))   // the 3D consoles too, measured
+            assertTrue(core, on.getValue("$core/$core.cfg").contains("audio_latency = \"48\""))
         // not on the 3D consoles, where re-running a frame is costly
         assertFalse(on.getValue("SwanStation/SwanStation.cfg").contains("preemptive"))
         // nor on MAME 2003-Plus, whose save states are not repeatable (its info file: savestate_features = "basic")
@@ -2234,7 +2272,7 @@ class ExtrasTest {
         // Nintendo 64: GLideN64 at four times its detail under the older OpenGL driver, which has no beam: black
         // frames instead, with the same CRT (its GLSL preset)
         val n64 = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg")
-        assertTrue(n64.contains("video_black_frame_insertion = \"1\"") && n64.contains("video_shader_subframes = \"1\"") && !n64.contains("video_driver"))
+        assertTrue(n64.contains("video_black_frame_insertion = \"1\"") && n64.contains("video_shader_subframes = \"1\"") && n64.contains("video_driver = \"gl\""))
         val opt = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt")
         assertTrue(opt.contains("mupen64plus-rdp-plugin = \"gliden64\"") && opt.contains("mupen64plus-rsp-plugin = \"hle\"") && opt.contains("1280x960"))
         assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp").contains("crt-gdv-3d.glsl"))

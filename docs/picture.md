@@ -110,7 +110,8 @@ its own beam, as a monitor showed it.
 
 **3D consoles: sharper than the console** draws the PlayStation and Dreamcast at 960 lines with clean edges and no
 wobble, keeps the Nintendo 64's extra detail across, and draws lines on 480-line pictures, like a monitor. A game that
-struggles can be run at its own resolution from its page: **Options, Run lighter**.
+struggles can be run at its own resolution from its page: **Options, Run lighter**. After a sitting with more than 5%
+of its pictures late, the page says so and X does the same.
 
 ## GameCube, Wii and PlayStation 2
 

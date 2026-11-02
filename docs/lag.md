@@ -45,11 +45,11 @@ drawn with OpenGL, where this setting does nothing.
 
 ## Sound sooner
 
-RetroArch keeps 128 ms of sound ready by default, to ride out hiccups. The cartridge consoles, handhelds and arcade
-rarely stall, so Timeline gives them 48 ms, and their sound arrives about 80 ms sooner. On the Retroid Pocket Nova,
-Android's own count of underruns (the gaps you'd hear as crackle) stayed at zero in play. The 3D consoles and the
-Nintendo DS keep 128 ms: a Dreamcast can stall for a tenth of a second while it loads, and a short buffer would turn
-that into a gap.
+RetroArch keeps 128 ms of sound ready by default, to ride out hiccups. Timeline gives every console in RetroArch but
+the Nintendo DS 48 ms, and their sound arrives about 80 ms sooner. On the Retroid Pocket Nova, Android's own count of
+underruns (the gaps you'd hear as crackle) stayed at zero in play on the cartridge consoles, handhelds and arcade, and
+through the first minute of Banjo-Kazooie, Crash Bandicoot, Panzer Dragoon II and Crazy Taxi. Crazy Taxi's few late
+pictures there (a load at the start, its scene changes) came the same with 128 ms, so they are the game's own.
 
 ## Even pictures on the Nintendo 64
 

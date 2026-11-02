@@ -313,7 +313,7 @@ void main()
      * aperture grille and glow. [lines] and [mask] from the cable ([RetroPack.tvLook]); [signal] and [white] as
      * Settings, Picture.
      */
-    fun dolphin(lines: Double, signal: Int, white: String, mask: Double): String = """
+    fun dolphin(lines: Double, signal: Int, white: String, mask: Double, stripe: Int = 1): String = """
 // Timeline TV for Dolphin: GameCube and Wii as a television showed them.
 // Written for Timeline by NOSTOS. Timeline is under the GNU General Public License, version 3 or later.
 
@@ -373,6 +373,7 @@ float3 TEX(float2 uv)
 #define OPT_WHITE GetOption(white)
 #define OPT_MASK GetOption(mask)
 #define OPT_SAT GetOption(colour)
+#define OPT_STRIPE $stripe.0
 ${Tv480.body}
 void main()
 {
@@ -395,7 +396,7 @@ object Tv480 {
     const val PRESET = "timeline-crt.slangp"
 
     /** ARMSX2's preset: [lines], [signal], [white] and [mask] as for [Crt3d.dolphin]. */
-    fun preset(lines: Double, signal: Int, white: String, mask: Double) = """
+    fun preset(lines: Double, signal: Int, white: String, mask: Double, stripe: Int = 1) = """
 shaders = "1"
 shader0 = "$SLANG"
 filter_linear0 = "true"
@@ -407,6 +408,7 @@ tv_lines = "$lines"
 tv_signal = "$signal.0"
 tv_white = "$white"
 tv_mask = "$mask"
+tv_stripe = "$stripe.0"
 """.trimStart()
 
     /**
@@ -424,7 +426,8 @@ tv_mask = "$mask"
      *  - The phosphors: an aperture grille, a red, a green and a blue stripe on three panel columns, the lit color let
      *    through more and the other two less. Made up so mid-tones keep their light; only the brightest clip.
      *  - The glow a tube's glass spread around bright parts.
-     * [OPT_LINES] 0 to 1 is how far the gaps darken, [OPT_MASK] the grille's strength. Needs TEX(uv) (filtered),
+     * [OPT_LINES] 0 to 1 is how far the gaps darken, [OPT_MASK] the grille's strength, [OPT_STRIPE] the screen columns
+     * to a stripe (RetroPack.maskStep). Needs TEX(uv) (filtered),
      * PICSIZE (the picture's size in its own pixels) and the OPT_ names defined first.
      */
     val body = """
@@ -502,10 +505,10 @@ float3 tv(float2 uv, float2 frag, float rows)
         + TEX(uv + float2(-2.0 * px.x, 2.0 * px.y));
     light += GLOW * pow(near * 0.125, float3(2.4, 2.4, 2.4));
 
-    // The phosphors: an aperture grille, three panel columns to a red, a green and a blue stripe.
+    // The phosphors: an aperture grille, a red, a green and a blue stripe, each OPT_STRIPE panel columns wide.
     float l = lumOf(light);
     float m = OPT_MASK * (1.0 - 0.3 * min(l, 1.0));
-    float col = mod(floor(frag.x), 3.0);
+    float col = mod(floor(frag.x / OPT_STRIPE), 3.0);
     float3 stripe = col < 0.5 ? float3(1.0 + m, 1.0 - m, 1.0 - m) : (col < 1.5 ? float3(1.0 - m, 1.0 + m, 1.0 - m) : float3(1.0 - m, 1.0 - m, 1.0 + m));
     light *= stripe / (1.0 - m / 3.0);
 
@@ -530,6 +533,7 @@ layout(push_constant) uniform Push
     float tv_white;
     float tv_mask;
     float tv_sat;
+    float tv_stripe;
 } params;
 
 #pragma parameter tv_lines "Line structure" 1.0 0.0 1.0 0.05
@@ -537,6 +541,7 @@ layout(push_constant) uniform Push
 #pragma parameter tv_white "White: 0 6500K, 1 7500K, 2 8000K, 3 9300K" 2.0 0.0 3.0 1.0
 #pragma parameter tv_mask "Aperture grille" 0.5 0.0 0.8 0.05
 #pragma parameter tv_sat "Saturation" 1.0 0.0 2.0 0.05
+#pragma parameter tv_stripe "Panel columns to a stripe" 1.0 1.0 2.0 1.0
 
 layout(std140, set = 0, binding = 0) uniform UBO
 {
@@ -568,6 +573,7 @@ vec3 TEX(vec2 uv) { return texture(Source, clamp(uv, vec2(0.0), vec2(1.0))).rgb;
 #define OPT_SIGNAL params.tv_signal
 #define OPT_WHITE params.tv_white
 #define OPT_MASK params.tv_mask
+#define OPT_STRIPE params.tv_stripe
 #define OPT_SAT params.tv_sat
 $body
 void main()

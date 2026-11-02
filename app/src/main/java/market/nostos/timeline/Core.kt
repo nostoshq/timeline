@@ -877,7 +877,7 @@ object DolphinPack {
                 out += Doc("Config/Profiles/Wiimote/$PROFILE ${i + 2}.ini", text = wiiRemote(d, sideways = false))
             }
         }
-        if (look.crt3d) out += RetroPack.tvLook(look, "gcwii").let { t -> Doc("Shaders/$CRT.glsl", text = Crt3d.dolphin(t.lines, t.signal, t.white, t.mask)) }
+        if (look.crt3d) out += RetroPack.tvLook(look, "gcwii").let { t -> Doc("Shaders/$CRT.glsl", text = Crt3d.dolphin(t.lines, t.signal, t.white, t.mask, t.stripe)) }
         for (letter in gameCube) out += Doc("GameSettings/$letter.ini", text = family(look, wiiGame = false, pad = pad, ports = ports.size))
         for (letter in wii) out += Doc("GameSettings/$letter.ini", text = family(look, wiiGame = true, pad = pad, ports = ports.size))
         // Dolphin keeps a game's own settings in a file named after its full ID: only the control lines are added.
@@ -1513,9 +1513,11 @@ object Eq {
 /**
  * One big emulator at a time. An Xbox game left open in hakuX, with other emulators beside it, can take the memory a
  * Wii game then needs; a device can freeze for a minute and more while Android moves memory about, and Dolphin is left
- * stuck. Before a game in a big emulator, every other big emulator that is running is looked at. One is closed
- * without a word only when it is known for certain to hold nothing: today that is only a Dolphin build that ends games when left, with its game
- * thread gone, read from the kernel (DolphinWatch). Any other big emulator that is running is asked about, named game or
+ * stuck. Before every game, whatever runs it, every big emulator that is running is looked at: a Dolphin left from a
+ * GameCube sitting, up behind a Nintendo 64 game, was enough to drop its frames and sound in the first minutes. One is
+ * closed without a word only when it is known for certain to hold nothing: today that is only a Dolphin build that ends
+ * games when left, with its game thread gone, read from the kernel (DolphinWatch); that is also done as the launcher
+ * comes back to the front (Store.tidySoon). Any other big emulator that is running is asked about, named game or
  * not, since a game can be open in it that the launcher never saw (started from inside it, or left another way).
  * hakuX and ARMSX2 are never force-stopped: they write the Xbox hard disk image and the PlayStation 2 memory cards as
  * they go, and a stop mid-write could damage them.
@@ -1534,7 +1536,6 @@ object Memory {
     }
 
     fun decide(target: String, others: List<Other>): Step {
-        if (target !in BIG) return Step.Go
         // Running, or could not be told and known to hold a game: either way it is asked about.
         val up = others.filter { it.id in BIG && (it.running == true || (it.running == null && it.held != null)) }
         val busy = up.filter { !it.idle || it.held != null }
@@ -1542,6 +1543,55 @@ object Memory {
         val idle = up.filter { it.idle && it.id !in NEVER_FORCE }.map { it.pkg }
         return if (idle.isEmpty()) Step.Go else Step.Close(idle)
     }
+}
+
+/**
+ * How smoothly a sitting ran, from Android's own record of every picture the screen showed: SurfaceFlinger's frame
+ * statistics, cleared and switched on as a game starts and read once the launcher is back, so nothing runs beside the
+ * game. The record's first histogram is the time from one picture on the screen to
+ * the next, in steps of a millisecond up to 34, then wider.
+ */
+object Stutter {
+    /** More late pictures than this, in hundredths, and the game's page offers Run lighter. */
+    const val FLAG = 5.0
+
+    data class Sitting(val frames: Int, val late: Int) {
+        val percent: Double get() = if (frames == 0) 0.0 else late * 100.0 / frames
+    }
+
+    /** What the device runs for it, as root: the histogram's line alone, then the record switched off. */
+    const val READ = "dumpsys SurfaceFlinger --timestats -dump | sed -n '/presentToPresent/{n;p;q;}'\n" +
+        "dumpsys SurfaceFlinger --timestats -disable >/dev/null\n"
+
+    /** The screen's picture-to-picture histogram, milliseconds to count: the line [READ] prints, or the whole dump. */
+    fun histogram(dump: String): Map<Int, Int> {
+        val lines = dump.lines()
+        val i = lines.indexOfFirst { it.trim().startsWith("presentToPresent histogram") }
+        val line = if (i >= 0) lines.getOrNull(i + 1) else lines.firstOrNull { it.trim().startsWith("0ms=") }
+        return line.orEmpty().trim().split(' ').mapNotNull { t ->
+            val ms = t.substringBefore("ms=").toIntOrNull()
+            val n = t.substringAfter("ms=", "").toIntOrNull()
+            if (ms != null && n != null) ms to n else null
+        }.toMap()
+    }
+
+    /**
+     * The sitting at [hz]: a picture is late when it came at least half a refresh after the usual pace (the commonest
+     * step). [drawnOnly]: an emulator that shows only the pictures a game draws (Dolphin, unlike RetroArch and ARMSX2,
+     * which show one for every frame the console sent), where a 60 game's 30-a-second film is its own pace: there only a
+     * step of more than twice the usual one counts. Null when there is too little to go by (under a thousand pictures).
+     */
+    fun of(hist: Map<Int, Int>, hz: Int, drawnOnly: Boolean): Sitting? {
+        val frames = hist.values.sum()
+        if (frames < 1000 || hz <= 0) return null
+        val usual = hist.entries.maxByOrNull { it.value }!!.key + 0.5          // each step holds a whole millisecond
+        val limit = (if (drawnOnly) 2 * usual else usual) + 500.0 / hz
+        return Sitting(frames, hist.filterKeys { it + 0.5 >= limit }.values.sum())
+    }
+
+    /** Kept per game as "percent, pictures, when". */
+    fun format(s: Sitting, at: Long): String = "%.1f\t%d\t%d".format(java.util.Locale.US, s.percent, s.frames, at)
+    fun percentOf(saved: String): Double? = saved.substringBefore('\t').toDoubleOrNull()
 }
 
 /** The launcher's volume steps: off, then 10 to 100 in tens, each on the nearest of Android's (15 on the Nova). */
@@ -1748,6 +1798,7 @@ data class Look(
     val lag: String = "Preemptive frames",             // 8 and 16-bit consoles and handhelds: RetroPack.lagChoices
     val hz: Int = 120,
     val tv: Boolean = false,                            // docked to a television as RetroArch starts
+    val tvLines: Int = 0,                               // that television's lines (1080, 2160), 0 when not known
     val panel: Pair<Int, Int> = 1280 to 960,           // the built-in screen's size, landscape: whole-pixel layouts are worked out from it
     val upright: String = "Right side down",
     val speakers: List<Int>? = null,
@@ -1877,11 +1928,20 @@ object RetroPack {
      * The grille at the same strength for all. Then the signal as the shader numbers it (0 component, 1 S-video,
      * 2 composite) and the set's white.
      */
-    data class TvLook(val lines: Double, val signal: Int, val white: String, val mask: Double)
+    data class TvLook(val lines: Double, val signal: Int, val white: String, val mask: Double, val stripe: Int = 1)
+
+    /**
+     * Screen columns to each phosphor stripe: 1 on the device's own screen, 2 docked to a television of under 1920 lines.
+     * The dock shows a copy of the device's screen scaled to the television: from 960 rows to 1080 lines that is 1.125
+     * television pixels to a column, so stripes one column wide fall unevenly across its pixels and shimmer in bands. Two
+     * columns wide they cover 2.25 television pixels each and keep their order; a 4K television (2.25 to a column) already
+     * does that at one.
+     */
+    fun maskStep(look: Look): Int = if (look.tv && look.tvLines < 1920) 2 else 1
     fun tvLook(look: Look, group: String): TvLook {
         val signal = look.signalOf(group)
         val (lines, mask) = if (signal == "Component") 1.0 to 0.5 else 0.6 to 0.5
-        return TvLook(lines, when (signal) { "Component" -> 0; "S-video" -> 1; else -> 2 }, whiteValue(look), mask)
+        return TvLook(lines, when (signal) { "Component" -> 0; "S-video" -> 1; else -> 2 }, whiteValue(look), mask, maskStep(look))
     }
     /** Which console group each television core draws for: one signal per core. */
     val signalGroup = mapOf("Nestopia" to "nes", "Snes9x" to "snes", "Genesis Plus GX" to "genesis", "Beetle PCE" to "tg16",
@@ -1933,10 +1993,10 @@ object RetroPack {
     val noLag = setOf("MAME 2003-Plus")
 
     /**
-     * RetroArch's own sound buffer for the cartridge consoles, handhelds and arcade: 48 ms instead of its usual 128, so
-     * sound comes about 80 ms sooner (Android adds about 120 ms of its own after it). Measured on a Retroid Pocket Nova:
-     * no underrun in play on NES, SNES, TurboGrafx, arcade or GBA. The 3D consoles keep 128: they can stall for a tenth
-     * of a second (Dreamcast while loading), which a short buffer would hear as a gap.
+     * RetroArch's own sound buffer, for every console it runs: 48 ms instead of its usual 128, so sound comes about 80 ms
+     * sooner (Android adds about 120 ms of its own after it). Measured on a Retroid Pocket Nova: no underrun in play on
+     * NES, SNES, TurboGrafx, arcade or GBA, and none in the first minute of Banjo-Kazooie, Crash Bandicoot, Panzer Dragoon
+     * II or Crazy Taxi; Crazy Taxi's few late pictures (a load at the start, its scene changes) came the same at 128.
      */
     private val quickSound = mapOf("audio_latency" to "48")
     private val lagOff = mapOf("run_ahead_enabled" to "false", "preemptive_frames_enable" to "false")
@@ -2227,7 +2287,7 @@ object RetroPack {
     private fun gdvParams(look: Look, glsl: Boolean, display: Display = Display.TV): List<String> = listOf(
         "sat = \"${satValue(look)}\"", "beam_max = \"2.50\"", "brightboost = \"1.10\"", "glow = \"0.10\"",
         "vignette = \"0.0\"", "scanline = \"${display.scanline}\"",
-        "shadowMask = \"${display.mask}\"", "maskDark = \"0.5\"", "maskLight = \"1.5\"", "thres = \"0.3\"",
+        "shadowMask = \"${display.mask}\"", "masksize = \"${maskStep(look)}.0\"", "maskDark = \"0.5\"", "maskLight = \"1.5\"", "thres = \"0.3\"",
     ) +
         (if (glsl) listOf("gamma_out = \"2.3\"") else listOf("warpY = \"0.0\"", "gamma_out_red = \"2.3\"", "gamma_out_green = \"2.3\"", "gamma_out_blue = \"2.3\""))
 
@@ -2606,7 +2666,7 @@ object RetroPack {
             "video_shader_subframes" to if (look.subframes3d && core in beamed) "2" else "1",
             "video_black_frame_insertion" to if (look.blackFrames3d && core in beamed) "1" else "0",
         )
-        for (core in threeD.keys) out["$core/$core.cfg"] = cfg(mapOf("video_smooth" to "true") + motion3d(core))
+        for (core in threeD.keys) out["$core/$core.cfg"] = cfg(mapOf("video_smooth" to "true") + motion3d(core) + quickSound)
         // 50 Hz games skip it, as on the television consoles.
         if (look.subframes3d || look.blackFrames3d) for ((core, systems) in threeD) if (core in beamed)
             for ((system, stem) in pal) if (system in systems)
@@ -2657,9 +2717,10 @@ object RetroPack {
         }
         // Dreamcast has two ways to draw. Vulkan is the fast one. OpenGL is the fallback, and RetroArch has to be
         // started in OpenGL for the core to be offered it. Always written, so switching back switches back.
-        out["Flycast/Flycast.cfg"] = cfg(mapOf("video_smooth" to "true", "video_driver" to if (look.compatible) "gl" else "vulkan") + motion3d("Flycast"))
+        out["Flycast/Flycast.cfg"] = cfg(mapOf("video_smooth" to "true", "video_driver" to if (look.compatible) "gl" else "vulkan") + motion3d("Flycast") + quickSound)
+        // OpenGL named outright: GLideN64 needs it, and RetroArch on Android has no "glcore" to fall back from.
         out["Mupen64Plus-Next/Mupen64Plus-Next.cfg"] = cfg(mapOf("video_smooth" to "true", "input_poll_type_behavior" to "0",
-            "video_shader_subframes" to "1", "video_black_frame_insertion" to if (n64Frames(look)) "1" else "0"))
+            "video_driver" to "gl", "video_shader_subframes" to "1", "video_black_frame_insertion" to if (n64Frames(look)) "1" else "0") + quickSound)
         // Drawn at four times their own detail, which is this panel's 960 lines exactly: the same polygons and
         // textures, with clean edges. PlayStation also loses its wobble and its dither pattern. Off puts each back
         // to what the console drew. Both values are always written, so switching back really does switch back.

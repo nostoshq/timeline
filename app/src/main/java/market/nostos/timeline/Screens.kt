@@ -504,6 +504,9 @@ fun DetailScreen(screen: Screen.Detail) {
     val list = app.browse
     val at = list.indexOf(g.key)
     val more = (lines.first - lines.second).coerceAtLeast(0)
+    // The last measured sitting stuttered (Stutter): Run lighter is offered on X, until it is on.
+    val stutter = remember(g.key, tick) { app.stutterOf(g)?.takeIf { it > Stutter.FLAG } }
+    val offerLighter = stutter != null && remember(g.key, tick) { app.canRunLighter(g) && !app.runsLighter(g) }
     // RetroArch is always handed the whole set and changes discs from its own menu; a standalone emulator is handed one disc.
     val pickDisc = g.discs.size > 1 && !emulatorId.startsWith("ra:")
     fun play() = app.play(g, if (pickDisc) g.discs.getOrNull(disc) else null)
@@ -520,6 +523,7 @@ fun DetailScreen(screen: Screen.Detail) {
             Key.L1 -> step(-1)
             Key.R1 -> step(1)
             Key.Y -> app.toggleFavorite(g)
+            Key.X -> if (offerLighter) { app.toggleLighter(g); app.say("${g.title} runs lighter from its next fresh start.") } else return@OnKey false
             Key.Start -> app.push(Screen.Menu("game:" + g.key))
             else -> return@OnKey false
         }
@@ -529,6 +533,7 @@ fun DetailScreen(screen: Screen.Detail) {
     val hints = buildList {
         add("A" to "Play")
         add("Y" to if (favorite) "Unfavorite" else "Favorite")
+        if (offerLighter) add("X" to "Run lighter")
         if (pickDisc) add("◀ ▶" to "Disc")
         if (more > 0) add("▲ ▼" to "Read")
         if (at >= 0 && list.size > 1) add("L1 R1" to "Previous, next")
@@ -677,6 +682,7 @@ fun DetailScreen(screen: Screen.Detail) {
                             (plan?.emulator ?: "No emulator") + if (plan?.installed == false) "  ·  not installed" else "",
                             color = if (plan?.installed == true) Ink.Cream else Ink.Muted, size = 12,
                        )
+                        if (stutter != null) Label("Stuttered last time: ${Math.round(stutter)}% late", color = Ink.Accent, size = 12)
                     }
                 }
             }
@@ -1127,12 +1133,13 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 app.prefs.put("idleMinutes", app.idleMinutes)
             }),
         Item("Refresh rate", "${app.refreshRate.toInt()} Hz", "The fastest mode the panel offers is asked for automatically."),
-        Item("Television", when (app.tvHz) { "120" -> "120 Hz when offered"; "60" -> "60 Hz"; else -> "Its own choice" },
+        Item("Television", if (app.tvHz == "60") "60 Hz" else "Its own choice",
             (if (app.tvNow.isEmpty()) "No television connected now. " else "Showing ${app.tvNow}. ") +
-                "Left to its own choice, the television keeps whatever mode it picks. 120 Hz when offered asks a television " +
-                "that offers it for 120 Hz, at a size the dock already carries (Retroid devices). Games are set for the " +
-                "television's rate as they start. If the television shows no picture, choose its own choice again.",
-            onStep = { step -> val o = listOf("auto", "120", "60"); app.setTv(o[(o.indexOf(app.tvHz).coerceAtLeast(0) + step).mod(o.size)]) }),
+                "Docked, games are set for 60 Hz, which every television shows. 60 Hz also asks a television showing " +
+                "another rate for 60, at a size the dock already carries (Retroid devices); its own choice leaves it as it " +
+                "is. The phosphors are drawn twice as wide on a television under 4K, so they stay even when the dock " +
+                "scales the picture up.",
+            onStep = { _ -> app.setTv(if (app.tvHz == "60") "auto" else "60") }),
    ))
     id == "sound" -> {
         val curve = Eq.parse(app.prefs.str("eq.curve"))

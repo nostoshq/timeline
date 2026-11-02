@@ -1095,6 +1095,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         lag = prefs.str("ra.lag", if (prefs.bool("ra.runahead", false)) "Run-ahead" else "Preemptive frames").takeIf { it in RetroPack.lagChoices } ?: "Preemptive frames",
         hz = gameHz(),
         tv = tvDisplays().isNotEmpty(),
+        tvLines = tvDisplays().maxOfOrNull { it.mode.physicalHeight } ?: 0,
         panel = panelSize(),
         upright = prefs.str("ra.upright", "Right side down").takeIf { it in RetroPack.uprightChoices } ?: "Right side down",
         speakers = if (prefs.bool("eq.retroarch", false)) Eq.parse(prefs.str("eq.curve")) else null,
@@ -1406,6 +1407,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                         copied += SaveSync.backUp(FileHome(src.home, RootMirror.dir(ctx, src), listOf(src.top)), card)
                     }
                     val dolphin = dolphinHome()
+                    // Whether Dolphin was up before its folder was asked for: asking wakes it.
+                    val dolphinUp = if (dolphin != null) Proc.running(ctx, DolphinPack.PACKAGE) else null
                     if (dolphin != null && dolphinIdle.compareAndSet(true, false)) {
                         // Dolphin is asked what it holds, and given eight seconds to say. With no answer nothing of
                         // Dolphin's is touched this time. With one, the work that follows is seen through to its end.
@@ -1420,6 +1423,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                             restoringDolphin = false
                             copied += SaveSync.backUp(dolphin, card)
                         } finally { dolphinIdle.set(true) }
+                        lullDolphin(dolphinUp)
                     }
                     restoringDolphin = false
                     copied
@@ -2098,21 +2102,21 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     }.getOrDefault(emptyList())
 
     /**
-     * The refresh rate a game will get: the panel's 120, or the television's when docked. The dock shows a copy of the
-     * Nova's screen and games are then held to the television's rate; set up for 120 (two passes of the motion-clarity
-     * shader to each picture) on a 60 Hz television they would run at half speed. Only a television counts:
-     * the dual-screen attachment is a screen of its own, and the games on the Nova's panel keep its rate.
+     * The refresh rate a game will get: the panel's own, or 60 when docked to a television. The dock shows a copy of the
+     * device's screen and games are then held to the television's rate; set up for 120 (two passes of the motion-clarity
+     * shader to each picture) on a 60 Hz television they would run at half speed. A television is always taken as 60,
+     * the rate every one of them shows. Only a television counts: the dual-screen attachment is a screen of its own, and
+     * the games on the device's own screen keep its rate.
      */
-    fun gameHz(): Int {
-        var hz = refreshRate
-        tvDisplays().forEach { d -> if (d.refreshRate >= 30f) hz = minOf(hz, d.refreshRate) }
-        return Math.round(hz).coerceAtLeast(60)                 // 119.88 is 120
-    }
+    fun gameHz(): Int = if (tvDisplays().isNotEmpty()) 60 else Math.round(refreshRate).coerceAtLeast(60)   // 119.88 is 120
 
     // ---- a television ----------------------------------------------------------------------------
 
-    /** On a television that offers it, 120 Hz is asked for ("120"), or 60 ("60"); by default ("auto") the television's own choice is left alone. */
-    var tvHz by mutableStateOf(prefs.str("tv.hz", "auto"))
+    /**
+     * A television showing another rate is asked for 60 ("60"), or by default ("auto") left at its own choice. A "120"
+     * kept from an earlier version, which asked for 120, now asks for 60, so the television comes back to it.
+     */
+    var tvHz by mutableStateOf(prefs.str("tv.hz", "auto").let { if (it == "120") "60" else it })
     /** What the television shows now, for the Display page ("1920 x 1080, 120 Hz"); empty with none connected. */
     var tvNow by mutableStateOf("")
     private val tvAsked = HashSet<Int>()          // displays already asked, while they stay connected
@@ -2161,29 +2165,31 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     fun setTv(hz: String) { tvHz = hz; prefs.put("tv.hz", hz); tvAsked.clear(); tvCleared.clear(); tvSoon() }
 
     /**
-     * Docked to a television that offers 120 Hz, asks Android for it once per connection (TvMode.pick), through the
-     * maker's service since the setting is Android's own. Android keeps the choice for that television and uses it
-     * by itself next time. Switched to 60, the television is handed back to its own choice.
+     * At "60", a television docked at another rate is put to 60, once per connection, through the maker's service since
+     * the setting is Android's own. One showing 120, as an earlier version asked of it and Android then kept for that
+     * television, is first handed back to its own choice; one still at another rate after that (120 of its own, or the
+     * 30 a dock can bring a 4K set up at) is asked for 60, at a size the dock already carries (TvMode.pick).
      */
     private suspend fun tvMode() {
         val tvs = tvDisplays()
         tvNow = tvs.firstOrNull()?.mode?.let { "${it.physicalWidth} x ${it.physicalHeight}, ${Math.round(it.refreshRate)} Hz" }.orEmpty()
         if (!device.bridge || tvHz == "auto") return
+        var again = false
         for (d in tvs) {
             if (d.displayId in tvAsked) continue
             val now = TvMode.Mode(d.mode.physicalWidth, d.mode.physicalHeight, d.mode.refreshRate)
             val modes = d.supportedModes.map { TvMode.Mode(it.physicalWidth, it.physicalHeight, it.refreshRate) }
-            val want = if (tvHz == "120") 120 else 60
-            val pick = TvMode.pick(modes, now, want)
-            val command = when {
-                pick != null -> "cmd display set-user-preferred-display-mode ${pick.width} ${pick.height} ${pick.hz} ${d.displayId}"
-                // Back from 120 to 60: the television's own choice first, looked at again once it has settled.
-                want == 60 && now.hz >= 119f && d.displayId !in tvCleared -> { tvCleared += d.displayId; "cmd display clear-user-preferred-display-mode ${d.displayId}" }
-                else -> null
+            val command = if (now.hz >= 119f && d.displayId !in tvCleared) {
+                // Its own choice first, looked at again once it has settled.
+                tvCleared += d.displayId; again = true
+                "cmd display clear-user-preferred-display-mode ${d.displayId}"
+            } else {
+                tvAsked += d.displayId
+                TvMode.pick(modes, now, 60)?.let { "cmd display set-user-preferred-display-mode ${it.width} ${it.height} ${it.hz} ${d.displayId}" }
             }
-            if (pick != null || command == null) tvAsked += d.displayId
             if (command != null) withContext(Dispatchers.IO) { Bridge.run(command) }
         }
+        if (again) tvSoon()
     }
 
     /** Dolphin's ports and the controllers that drive each (Players.dolphinPorts). */
@@ -2205,7 +2211,66 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
      */
     private fun writeDolphinSoon() {
         dolphinSoonJob?.cancel()
-        dolphinSoonJob = scope.launch { delay(2000); withContext(Dispatchers.IO) { runCatching { if (dolphinGranted()) writeDolphin() } } }
+        dolphinSoonJob = scope.launch { delay(2000); withContext(Dispatchers.IO) { runCatching {
+            if (dolphinGranted()) { val up = Proc.running(ctx, DolphinPack.PACKAGE); writeDolphin(); lullDolphin(up) }
+        } } }
+    }
+
+    /**
+     * The sitting's frame record (Stutter), kept for the game's page as "stutter:" and its key, then switched off. A 50 Hz
+     * game in RetroArch is not judged: on a 120 Hz screen its pictures come unevenly by nature.
+     */
+    private fun readStutter(playing: String, inside: String) {
+        if (!(device.bridge || Bridge.present)) return
+        val key = playing.substringBefore('\n')
+        val g = find(key)
+        val hz = gameHz()
+        val drawnOnly = inside.isNotEmpty() && emulatorOf(inside) != "armsx2"
+        scope.launch(Dispatchers.IO) {
+            // One command for the service, so a script; the whole record is too long to come back through it.
+            val file = File(ctx.filesDir, "frames.sh")
+            val dump = if (Scripts.write(file, Stutter.READ)) Bridge.read("timeout 9 sh ${file.absolutePath}") else null
+            if (g == null || (g.pal && inside.isEmpty())) return@launch
+            val s = dump?.let { Stutter.of(Stutter.histogram(it), hz, drawnOnly) } ?: return@launch
+            prefs.put("stutter:$key", Stutter.format(s, System.currentTimeMillis()))
+            withContext(Dispatchers.Main) { settingsTick++ }
+        }
+    }
+
+    /** How late the game's last measured sitting was, in hundredths of its pictures; null when none was measured. */
+    fun stutterOf(g: Game): Double? = Stutter.percentOf(prefs.str("stutter:" + g.key))
+
+    /**
+     * Back in the launcher: a Dolphin left running with no game in it is closed, once the last GameCube or Wii sitting has
+     * been put away, so it takes no memory or speed from what is played next. It is read from its own threads
+     * (DolphinWatch); one holding a game is left for the player to go back to. Before every start the same check runs
+     * again (survey).
+     */
+    private var tidyJob: Job? = null
+    private fun tidySoon() {
+        tidyJob?.cancel()
+        val seq = startSeq
+        tidyJob = scope.launch {
+            delay(DOLPHIN_CLOSE_MS + 1500)
+            collecting?.join()
+            if (starting || !inFront || seq != startSeq || !(device.bridge || Bridge.present)) return@launch
+            val closed = withContext(Dispatchers.IO) {
+                emulatorPackages().filter { emulatorOf(it) == "dolphin" }.mapNotNull { pkg ->
+                    if (pkg in heldOpen || Proc.running(ctx, pkg) != true) return@mapNotNull null
+                    if (DolphinWatch.state(ctx, pkg) !in setOf("none", "idle")) return@mapNotNull null
+                    if (starting || seq != startSeq) return@mapNotNull null
+                    pkg.takeIf { Vendor.forceStop(it)?.let(Bridge::run) == true }
+                }
+            }
+            if (closed.isNotEmpty()) forgetOpenIn(closed)
+        }
+    }
+
+    /** Dolphin woken only to read or write its folder is put back to sleep, if it holds no game and nothing is starting. */
+    private fun lullDolphin(wasUp: Boolean?) {
+        if (wasUp != false || starting || !(device.bridge || Bridge.present)) return
+        if (heldOpen.containsKey(DolphinPack.PACKAGE) || prefs.str("playing.in").substringBefore('\n').contains("dolphin")) return
+        if (DolphinWatch.state(ctx, DolphinPack.PACKAGE) == "idle") Vendor.forceStop(DolphinPack.PACKAGE)?.let(Bridge::run)
     }
 
     private fun writeDolphinNow(stop: java.util.concurrent.atomic.AtomicBoolean?): Boolean {
@@ -2866,13 +2931,13 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                 return
             }
         }
-        // One big emulator at a time (Memory): looked at just before the start, away from the screen's thread. Not for a
+        // One big emulator at a time (Memory): looked at just before every start, away from the screen's thread. Not for a
         // start the player chose over the question already, nor for the test tools' starts.
         // (Nor a return to the game this emulator already holds; nor, once, the emulator whose game the player has just closed.)
         val returning = !retro && heldOpen[plan.pkg]?.key == g.key
         val skip = skipOnce
         skipOnce = null
-        val big = emulatorId in Memory.BIG && !second && !knowing && !testStartOf(g.key) && !returning
+        val big = !second && !knowing && !testStartOf(g.key) && !returning
         val heldNow = heldOpen.mapValues { it.value.key }
         val leftAt = leftDolphinAt
         val seq = ++startSeq
@@ -2929,6 +2994,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                         return@launch
                     }
                     is Memory.Step.Close -> {
+                        // Not before the last GameCube or Wii sitting has been put away: that is read through Dolphin itself.
+                        if (step.pkgs.any { emulatorOf(it) == "dolphin" }) collecting?.join()
                         withContext(Dispatchers.IO) { step.pkgs.forEach { Vendor.forceStop(it)?.let(Bridge::run) } }
                         forgetOpenIn(step.pkgs)
                     }
@@ -2980,7 +3047,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // choice, while ARMSX2 is closed (it keeps its preferences in memory while it runs).
             // Only when the player has asked for it: it edits ARMSX2's own files.
             if (emulatorId == "armsx2" && root && prefs.bool("ps2.manage", false)) withContext(Dispatchers.IO) {
-                Ps2Look.sync(ctx, plan.pkg, RetroPack.tvLook(look(), "ps2").let { t -> Tv480.preset(t.lines, t.signal, t.white, t.mask) })
+                Ps2Look.sync(ctx, plan.pkg, RetroPack.tvLook(look(), "ps2").let { t -> Tv480.preset(t.lines, t.signal, t.white, t.mask, t.stripe) })
                 if (Proc.running(ctx, plan.pkg) == false) Ps2Resume.apply(ctx, plan.pkg, look().resume)
             }
             // Dolphin's files are reached through Dolphin itself. If it does not answer, the game is started all the same.
@@ -2999,6 +3066,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             val problem = Runner.start(ctx, launch)
             starting = false
             if (problem != null) { awayForGame = false; again = null; after = null; say(problem); return@launch }
+            // This sitting's frame record, read when the launcher is back (readStutter).
+            if (device.bridge) scope.launch(Dispatchers.IO) { Bridge.run("dumpsys SurfaceFlinger --timestats -enable -clear") }
             val now = System.currentTimeMillis()
             if (retro && ready != null) watch(g, disc, ready, now, plan.pkg, suspect)
             if (retro) {
@@ -3532,6 +3601,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         readyBios()
         touchSettings()
         deviceHome()
+        if (playing.isNotEmpty()) readStutter(playing, inside)
+        if (next == null) tidySoon()
         if (playing.isNotEmpty()) {
             if (prefs.bool("saves.backup", true)) backUpSaves()
             val told = dolphinOutcome(playing, viaHome)
