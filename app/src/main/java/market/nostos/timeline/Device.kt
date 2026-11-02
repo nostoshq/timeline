@@ -150,6 +150,10 @@ object Panel {
 
     fun saturation(): String = DisplayCalibration.decimalIn(Bridge.read(DisplayCalibration.READ_SATURATION))
     fun color(mode: Int, saturation: String) { DisplayCalibration.colorCommands(mode, saturation)?.forEach { Bridge.run(it) } }
+    fun tint(): Int? = DisplayCalibration.tintIn(Bridge.read(DisplayCalibration.READ_TINT))
+    fun setTint(tint: Int) { DisplayCalibration.tintCommands(tint).forEach { Bridge.run(it) } }
+    /** Under the calibration the tint stays off: a reset of Retroid's settings or an update can bring it back. */
+    fun keepTintOff() { if (tint().let { it != null && it != DisplayCalibration.TINT_OFF }) setTint(DisplayCalibration.TINT_OFF) }
 }
 
 /**

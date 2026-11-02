@@ -1574,6 +1574,18 @@ class ExtrasTest {
         assertTrue(files.getValue("Genesis Plus GX/Genesis Plus GX.opt").contains("genesis_plus_gx_system_bram = \"per game\""))
     }
 
+    @Test fun retroidsTintIsReadAndSetPlainly() {
+        // The factory value is the pale blue the firmware ships: red 0xBC, green 0xE1, blue 0xFF.
+        assertEquals(0xFFBCE1FF.toInt(), DisplayCalibration.FACTORY_TINT)
+        assertEquals(-4398593, DisplayCalibration.tintIn("-4398593\n"))
+        assertEquals(-1, DisplayCalibration.tintIn("result: 0\n-1\n"))
+        assertNull(DisplayCalibration.tintIn("null\n")); assertNull(DisplayCalibration.tintIn(null))
+        val off = DisplayCalibration.tintCommands(DisplayCalibration.TINT_OFF)
+        assertEquals(listOf("settings put secure customer_display_color_temperature -1", "service call color_display 17 i32 -1"), off)
+        // Each is a single plain command: the maker's service runs only the first part of a chain.
+        assertTrue((off + DisplayCalibration.tintCommands(DisplayCalibration.FACTORY_TINT)).none { ";" in it || "&&" in it || "|" in it })
+    }
+
     @Test fun theDisplayCalibrationIsRebuiltExactlyOrNotAtAll() {
         val patch = File("src/main/assets/${DisplayCalibration.PATCH_ASSET}").readBytes()
         assertEquals(DisplayCalibration.PATCH_SHA256, DisplayCalibration.sha256(patch))

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+- **The measured color calibration on the Retroid Pocket Nova, as it was measured.** The Nova's firmware tints the
+  whole screen a pale blue after everything else: red to 93%, green to 97%, white near 6800 K. The calibration was
+  measured on an untinted screen, so with both in place the white sat cooler than D65, and every console's picture
+  with it. Calibrated now turns the tint off and keeps it off; Stock puts it back.
+
 ## 1.1.0
 
 - **The true picture.** Every console is now set up to look the way it did on the screen it was played on in an

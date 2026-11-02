@@ -1101,7 +1101,8 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 if (pn != null && !pn.compatible) (if (pn.calibrated) pn.reason + " Stock takes the calibration out." else pn.reason) else
                     "Calibrated is pippopapera's measurement of the Nova's own panel (sRGB, D65 white, gamma 2.2): an average error " +
                     "of 0.6 instead of 5.8, so reds and greens look as they were made instead of running hot. Stock is the panel as " +
-                    "shipped, with Android's 10% extra saturation. A change shows after a restart.",
+                    "shipped, with Android's 10% extra saturation and Retroid's cool tint, which Calibrated turns off. A change shows " +
+                    "after a restart.",
                 onStep = { if (pn != null && (pn.compatible || pn.calibrated)) app.setDisplayColor(!pn.calibrated) })
         },
    ) + (if (app.panelPending) listOf(Item("Restart to finish", "", "The new color takes effect when the Nova starts again. Press A to restart it now.",

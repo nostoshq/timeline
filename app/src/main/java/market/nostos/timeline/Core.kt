@@ -3060,12 +3060,28 @@ object DisplayCalibration {
     /** A property's value such as "1.1" in the same kind of answer. */
     fun decimalIn(answer: String?): String = answer?.let { Regex("\\b[0-9]\\.[0-9]{1,3}\\b").find(it)?.value }.orEmpty()
     const val READ_SATURATION = "getprop persist.sys.sf.color_saturation"
+
+    /**
+     * Retroid's own tint: a picked color whose red, green and blue scale the whole screen after everything else ("-1"
+     * is none). This firmware ships it at a pale blue (0xBCE1FF): red to 93%, green to 97%, white near 6800 K instead
+     * of D65. The calibration was measured on an untinted screen (its own installer refuses a tinted one), so
+     * Calibrated turns the tint off and Stock puts back what was there.
+     */
+    const val TINT_OFF = -1
+    const val FACTORY_TINT = -4398593
+    const val READ_TINT = "settings get secure customer_display_color_temperature"
+    fun tintIn(answer: String?): Int? =
+        answer?.let { Regex("(?m)^\\s*(-?\\d+)\\s*$").findAll(it).lastOrNull()?.groupValues?.get(1)?.toIntOrNull() }
+    /** The setting is read when the device starts; the call (IColorDisplayManager 17) applies it now. */
+    fun tintCommands(tint: Int): List<String> = listOf("settings put secure customer_display_color_temperature $tint",
+        "service call color_display 17 i32 $tint")
     const val RESTART = "svc power reboot"
 
     /**
      * The color mode around it. The calibration is measured with Android's own saturation at exactly "1.0" (Android 13
      * reads the property as text at start: anything else can bring back the 10% "Boosted" saturation the Nova ships
-     * with) and the Natural color mode. Going back restores what was there before, in the same shapes.
+     * with) and the Natural color mode, with Retroid's tint off ([tintCommands]). Going back restores what was there
+     * before, in the same shapes.
      */
     fun colorCommands(mode: Int, saturation: String): List<String>? {
         if (mode !in 0..3 || saturation !in setOf("1.0", "1.1")) return null

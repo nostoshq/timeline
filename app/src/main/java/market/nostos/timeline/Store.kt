@@ -1010,6 +1010,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             }
             // Color calibration is never applied by itself: it is offered on Settings, Display, on the one device and
             // firmware it was measured for.
+            if (panel?.calibrated == true) withContext(Dispatchers.IO) { runCatching { Panel.keepTintOff() } }
             // A device that shut down mid-game keeps that game's power and fan: put the resting state back.
             if (!awayForGame && prefs.str("playing").isEmpty()) deviceHome()
             // Battery care: a look once a minute while awake (an alarm covers sleep). The maker's service can be slow to
@@ -2377,12 +2378,13 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                             // What the colors were before, read now, kept only once the calibration is in place.
                             val mode = Settings.System.getInt(ctx.contentResolver, "display_color_mode", 1)
                             val sat = Panel.saturation().takeIf { it == "1.0" || it == "1.1" } ?: "1.1"
+                            val tint = Panel.tint() ?: DisplayCalibration.FACTORY_TINT
                             Panel.calibrate(ctx) ?: run {
                                 if (!prefs.bool("display.ours", false) && Panel.state().calibrated) {
                                     prefs.put("display.ours", true)
-                                    if (prefs.str("display.was").isEmpty()) prefs.put("display.was", "${mode.coerceIn(0, 3)},$sat")
+                                    if (prefs.str("display.was").isEmpty()) prefs.put("display.was", "${mode.coerceIn(0, 3)},$sat,$tint")
                                 }
-                                Panel.color(0, "1.0"); null
+                                Panel.color(0, "1.0"); Panel.setTint(DisplayCalibration.TINT_OFF); null
                             }
                         } else {
                             // Ours when Timeline put it there, or when a note of the colors before it was kept.
@@ -2391,6 +2393,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                                 val mode = was.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..3 } ?: 1
                                 val sat = was.getOrNull(1)?.takeIf { it == "1.0" || it == "1.1" } ?: "1.1"
                                 Panel.color(mode, sat)
+                                // Recorded since 1.1.1; before, the tint was never changed from the factory's.
+                                Panel.setTint(was.getOrNull(2)?.toIntOrNull() ?: DisplayCalibration.FACTORY_TINT)
                                 prefs.put("display.was", ""); prefs.put("display.ours", false)
                                 null
                             }
