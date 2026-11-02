@@ -133,10 +133,11 @@ void main()
 #pragma parameter beam_min "Scanline Dark" 1.5 0.5 3.0 0.05
 #pragma parameter beam_max "Scanline Bright" 2.5 0.5 3.0 0.05
 #pragma parameter h_sharp "Horizontal Sharpness" 2.5 1.0 5.0 0.05
-#pragma parameter shadowMask "CRT Mask: -1 none, 0 CGWG, 11 GDV" -1.0 -1.0 11.0 1.0
+#pragma parameter shadowMask "CRT Mask: -1 none, 0 CGWG, 1 slot, 2 grille, 11 GDV" -1.0 -1.0 11.0 1.0
 #pragma parameter thres "Mask Effect Threshold" 0.4 0.0 0.9 0.02
 #pragma parameter masksize "CRT Mask Size" 1.0 1.0 2.0 1.0
 #pragma parameter maskDark "Lottes maskDark" 0.0 0.0 2.0 0.1
+#pragma parameter maskLight "Lottes maskLight" 1.5 0.0 2.0 0.1
 #pragma parameter CGWG "CGWG Mask Str." 1.0 0.0 1.0 0.1
 #pragma parameter vignette "Vignette On/Off" 0.0 0.0 1.0 1.0
 #pragma parameter gamma_out "Gamma out" 2.3 1.0 4.0 0.1
@@ -184,7 +185,7 @@ uniform vec2 InputSize;
 uniform vec2 OutputSize;
 COMPAT_VARYING vec4 TEX0;
 #ifdef PARAMETER_UNIFORM
-uniform float scanline, beam_min, beam_max, h_sharp, shadowMask, thres, masksize, maskDark, CGWG, vignette,
+uniform float scanline, beam_min, beam_max, h_sharp, shadowMask, thres, masksize, maskDark, maskLight, CGWG, vignette,
     gamma_out, brightboost, sat, glow, gdv_hires;
 #else
 #define scanline 10.0
@@ -195,6 +196,7 @@ uniform float scanline, beam_min, beam_max, h_sharp, shadowMask, thres, masksize
 #define thres 0.4
 #define masksize 1.0
 #define maskDark 0.0
+#define maskLight 1.5
 #define CGWG 1.0
 #define vignette 0.0
 #define gamma_out 2.3
@@ -217,6 +219,16 @@ vec3 Mask(vec2 pos)
     {
         float mc = 1.0 - CGWG;
         return fract(pos.x * 0.5) < 0.5 ? vec3(1.1, mc, 1.1) : vec3(mc, 1.1, mc);
+    }
+    if (shadowMask < 2.5)
+    {
+        // 1, a slot mask, and 2, an aperture grille, as the slang original draws them (from Lottes's PD CRT shader).
+        vec3 m = vec3(maskDark);
+        float x = fract(pos.x / 3.0);
+        if (x < 0.333) m.b = maskLight; else if (x < 0.666) m.g = maskLight; else m.r = maskLight;
+        if (shadowMask > 1.5) return m;
+        float odd = fract(pos.x / 6.0) < 0.5 ? 1.0 : 0.0;
+        return m * (fract((pos.y + odd) / 2.0) < 0.5 ? maskDark : maskLight);
     }
     return fract(pos.x / 3.0) > 0.333 ? vec3(1.0) : vec3(maskDark);
 }
@@ -294,13 +306,11 @@ void main()
 """.trimStart()
 
     /**
-     * The CRT for GameCube and Wii, in Dolphin's shader dialect: the picture as a television of their day showed it
-     * ([Tv480.body], shared with PlayStation 2). GDV's mask and full-strength lines read as a fine black mesh at 480
-     * lines, and an earlier 480-line television with an aperture grille worked on gamma-encoded values, which made its
-     * gaps two to three times deeper than a set's and clipped white. The true picture (2026-11-02): both consoles sent 480 lines
-     * interlaced through a composite cable, whose fields fill each other's gaps on a set, leaving a faint line structure
-     * deepest in dark parts; the tube's own 2.4 gamma; the set's colour and white. [lines] is the line structure's depth
-     * and [mask] the aperture grille's strength, both from the cable ([RetroPack.tvLook]); [signal] and [white] as
+     * The CRT for GameCube and Wii, in Dolphin's shader dialect: [Tv480.body], shared with PlayStation 2. Earlier
+     * versions: GDV's black-column mask and full-strength lines read as a fine black mesh at 480 lines; lines and a
+     * grille drawn on gamma-encoded values clipped white; a faint line structure with no phosphors showed nothing of a
+     * tube. Now a tube seen up close, worked in light: beams that spread with brightness, the gaps between them, an
+     * aperture grille and glow. [lines] and [mask] from the cable ([RetroPack.tvLook]); [signal] and [white] as
      * Settings, Picture.
      */
     fun dolphin(lines: Double, signal: Int, white: String, mask: Double): String = """
@@ -314,7 +324,7 @@ void main()
 GUIName = Line structure
 OptionName = lines
 MinValue = 0.0
-MaxValue = 0.9
+MaxValue = 1.0
 StepAmount = 0.05
 DefaultValue = $lines
 
@@ -338,7 +348,7 @@ DefaultValue = $white
 GUIName = Aperture grille
 OptionName = mask
 MinValue = 0.0
-MaxValue = 0.6
+MaxValue = 0.8
 StepAmount = 0.02
 DefaultValue = $mask
 
@@ -400,12 +410,22 @@ tv_mask = "$mask"
 """.trimStart()
 
     /**
-     * The 480-line television, shared by PlayStation 2 (as a slang shader) and GameCube and Wii (Dolphin's dialect), in
-     * one pass, since neither emulator is known to take more. In order, as in the set: the signal ([Signal]'s softening,
-     * measured in a 320-pixel line so every console meets the same set), the set's phosphors and white ([Colour]), the
-     * tube's 2.4 gamma, then a faint line structure in light, deepest in dark parts, as a set's interlaced fields left
-     * it. Nothing is lifted, so nothing clips. Needs TEX(uv), PICSIZE (the picture's size in its own pixels) and the OPT_
-     * names defined first.
+     * The 480-line tube, shared by PlayStation 2 (as a slang shader) and GameCube and Wii (Dolphin's dialect), in one
+     * pass, since neither emulator is known to take more. A tube seen up close, with its lines and phosphors in view,
+     * worked in light as a tube made it:
+     *  - The signal ([Signal]'s softening for S-video and composite), the set's phosphors and white ([Colour]), the
+     *    tube's 2.4 gamma.
+     *  - The tube's own raster of 480 lines, whatever height the game drew: these consoles centered a 448- or 456-line
+     *    picture in it, and Dolphin stretches one to fill the screen, so the game's lines are blended into the raster
+     *    rather than drawn at their own pitch, which would beat against the panel's rows. At this panel's two rows a
+     *    line, one row is the beam and one the gap between beams.
+     *  - Each beam spreads with its brightness: a dark line leaves the gap nearly black, a bright one nearly fills it.
+     *    The beam's row carries the light the gap lacks, so the picture keeps its brightness, as a tube's did.
+     *  - The phosphors: an aperture grille, a red, a green and a blue stripe on three panel columns, the lit color let
+     *    through more and the other two less. Made up so mid-tones keep their light; only the brightest clip.
+     *  - The glow a tube's glass spread around bright parts.
+     * [OPT_LINES] 0 to 1 is how far the gaps darken, [OPT_MASK] the grille's strength. Needs TEX(uv) (filtered),
+     * PICSIZE (the picture's size in its own pixels) and the OPT_ names defined first.
      */
     val body = """
 const mat3 toYIQ = mat3(0.299, 0.596, 0.211, 0.587, -0.274, -0.523, 0.114, -0.322, 0.312);
@@ -415,19 +435,23 @@ const mat3 W7500 = mat3(0.79920, 0.01712,  0.00122,   0.01097, 0.85092,  0.00565
 const mat3 W8000 = mat3(0.74958, 0.01679,  0.00224,  -0.00131, 0.80881,  0.00928,  -0.00070, 0.01069, 0.98849);
 const mat3 W9300 = mat3(0.65840, 0.01604,  0.00411,  -0.02173, 0.72941,  0.01607,  -0.00579, 0.00776, 0.97982);
 mat3 whiteOf(float w) { return w < 0.5 ? W6500 : (w < 1.5 ? W7500 : (w < 2.5 ? W8000 : W9300)); }
+const float RASTER = 480.0;
+const float GLOW = 0.10;
 
-// The picture sampled pixel by pixel, blended only in the third of a pixel at each edge: at a screen's exact two
-// rows and columns a pixel, each line and column is drawn whole, as a progressive picture's were; the sampler's own
-// interpolation would soften every one.
+// The picture at one point: across, each pixel drawn whole and blended over a quarter of a pixel at each edge, as a
+// sharp beam swept it; down, the game's lines blended where the raster falls between them.
 float3 SRC(float2 uv)
 {
     float2 p = uv * PICSIZE - 0.5;
     float2 i = floor(p);
-    float2 f = clamp((p - i - 0.5) * 3.0 + 0.5, 0.0, 1.0);
+    float2 f = float2(clamp((p.x - i.x - 0.5) * 2.0 + 0.5, 0.0, 1.0), p.y - i.y);
     return TEX((i + 0.5 + f) / PICSIZE);
 }
 
-float3 tv(float2 uv, float2 frag, float rows)
+float lumOf(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+// The light the tube made at this point: signal, phosphors and white, gamma.
+float3 lightOf(float2 uv)
 {
     float3 c = SRC(uv);
     if (OPT_SIGNAL > 0.5) {
@@ -447,17 +471,45 @@ float3 tv(float2 uv, float2 frag, float rows)
         c = clamp(toRGB * float3(y, iq), 0.0, 1.0);
     }
     c = clamp(whiteOf(OPT_WHITE) * pow(c, float3(2.2, 2.2, 2.2)), 0.0, 1.0);
-    float3 light = pow(c, float3(2.4 / 2.2, 2.4 / 2.2, 2.4 / 2.2));
-    float lum = dot(light, float3(0.2126, 0.7152, 0.0722));
-    float f = fract(frag.y / max(rows, 1.0));
-    float depth = OPT_LINES * (1.0 - 0.5 * lum);
-    light *= 1.0 - depth * (0.5 - 0.5 * cos(6.2831853 * (f - 0.25)));
-    if (OPT_MASK > 0.0) {
-        float m = OPT_MASK;
-        float col = mod(floor(frag.x), 3.0);
-        light *= col < 0.5 ? float3(1.0, 1.0 - m, 1.0 - m) : (col < 1.5 ? float3(1.0 - m, 1.0, 1.0 - m) : float3(1.0 - m, 1.0 - m, 1.0));
-    }
-    light = mix(float3(lum, lum, lum), light, OPT_SAT);
+    return pow(c, float3(2.4 / 2.2, 2.4 / 2.2, 2.4 / 2.2));
+}
+
+// How far a beam of this brightness spreads into the gap below it (0 none, 1 filling it), and the beam's own row
+// raised by what the gap lacks, so an even area keeps its light.
+float spread(float l) { return mix(1.0, 0.08 + 0.72 * sqrt(l), OPT_LINES); }
+
+float3 tv(float2 uv, float2 frag, float rows)
+{
+    // Which of the raster's lines this row is in, and how far down it.
+    float r = uv.y * RASTER;
+    float k = floor(r);
+    float f = r - k;
+    float2 here = float2(uv.x, (k + 0.5) / RASTER);
+    float2 next = float2(uv.x, (k + 1.5) / RASTER);
+    float3 a = lightOf(here);
+    float3 b = lightOf(next);
+    float la = lumOf(a);
+    float3 beam = a * (2.0 - spread(la));
+    float3 gap = 0.5 * (a + b) * spread(lumOf(0.5 * (a + b)));
+    // The beam's row is the top half of the line, the gap the bottom half, eased between them on a taller screen.
+    float w = clamp(0.5 + 0.5 * cos(6.2831853 * (f - 0.25)) * max(1.0, rows * 0.5), 0.0, 1.0);
+    float3 light = mix(gap, beam, w);
+
+    // The glass's glow: light from the neighborhood, a picture pixel and a line or so around.
+    float2 px = 1.0 / PICSIZE;
+    float3 near = TEX(uv + float2(1.5 * px.x, 0.0)) + TEX(uv - float2(1.5 * px.x, 0.0)) + TEX(uv + float2(0.0, 1.5 * px.y))
+        + TEX(uv - float2(0.0, 1.5 * px.y)) + TEX(uv + 2.0 * px) + TEX(uv - 2.0 * px) + TEX(uv + float2(2.0 * px.x, -2.0 * px.y))
+        + TEX(uv + float2(-2.0 * px.x, 2.0 * px.y));
+    light += GLOW * pow(near * 0.125, float3(2.4, 2.4, 2.4));
+
+    // The phosphors: an aperture grille, three panel columns to a red, a green and a blue stripe.
+    float l = lumOf(light);
+    float m = OPT_MASK * (1.0 - 0.3 * min(l, 1.0));
+    float col = mod(floor(frag.x), 3.0);
+    float3 stripe = col < 0.5 ? float3(1.0 + m, 1.0 - m, 1.0 - m) : (col < 1.5 ? float3(1.0 - m, 1.0 + m, 1.0 - m) : float3(1.0 - m, 1.0 - m, 1.0 + m));
+    light *= stripe / (1.0 - m / 3.0);
+
+    light = mix(float3(l, l, l), light, OPT_SAT);
     return pow(clamp(light, 0.0, 1.0), float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
 }
 """
@@ -480,10 +532,10 @@ layout(push_constant) uniform Push
     float tv_sat;
 } params;
 
-#pragma parameter tv_lines "Line structure" 0.25 0.0 0.9 0.05
+#pragma parameter tv_lines "Line structure" 1.0 0.0 1.0 0.05
 #pragma parameter tv_signal "Signal: 0 component, 1 S-video, 2 composite" 2.0 0.0 2.0 1.0
 #pragma parameter tv_white "White: 0 6500K, 1 7500K, 2 8000K, 3 9300K" 2.0 0.0 3.0 1.0
-#pragma parameter tv_mask "Aperture grille" 0.0 0.0 0.6 0.02
+#pragma parameter tv_mask "Aperture grille" 0.5 0.0 0.8 0.05
 #pragma parameter tv_sat "Saturation" 1.0 0.0 2.0 0.05
 
 layout(std140, set = 0, binding = 0) uniform UBO

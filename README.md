@@ -59,9 +59,9 @@ its dithered stripes into the transparency its artists drew for, with the still 
 Super Nintendo get composite timed to their own signal; arcade games get the sharp RGB of a cabinet monitor. Each is
 a single choice in Settings, Picture, Signal, and you can change any of them.
 
-- **The tube** is GDV Mini Ultra from RetroArch's shader collection, set as a television showed it: the tube's own
-  gamma, scanlines centered on their lines, bright lines blooming into the gaps, nothing clipped. Four other looks are
-  there to choose.
+- **The tube** is GDV Mini Ultra from RetroArch's shader collection, set as a tube seen up close: its phosphor mask
+  in view, the tube's own gamma, scanlines centered on their lines, bright lines blooming into the gaps. Four other
+  looks are there to choose.
 - **Each console's own shape and color**: the Master System with its border, the Game Gear's wider pixels, the
   Genesis's measured color levels, and an American set's bluer white.
 - **The beam simulator.** On 120 Hz screens, Blur Busters' CRT beam simulator lights each picture for half the time,
@@ -111,7 +111,7 @@ corrects the speakers, and on the firmware it was measured on, it offers a measu
 
 ## Getting started
 
-1. **Download** `Timeline-1.1.1.apk` from [Releases](../../releases/latest) and open it on your handheld. Android
+1. **Download** `Timeline-1.2.0.apk` from [Releases](../../releases/latest) and open it on your handheld. Android
    asks whether your browser or file manager may install apps; allow it. You can switch that off again afterward.
 2. **Open Timeline.** It asks for access to your files, so it can find your games, then offers to be your home
    screen. You can say no and open it like any other app.

@@ -1254,8 +1254,8 @@ private fun menu(app: AppState, id: String): MenuDef = when {
             signal("n64", "Nintendo 64", "S-video, the best an American Nintendo 64 could do (it had no RGB). Composite, the cable in the box, is softer."),
             signal("saturn", "Saturn", "Composite: its mesh see-through effects, made of dots, blend into the transparency they were made for."),
             signal("dreamcast", "Dreamcast", "VGA, the VGA box on a monitor: 480 crisp progressive lines, and the console is told the box is in (a game that refuses it falls back to composite by itself). S-video and composite as on a television."),
-            signal("gcwii", "GameCube and Wii", "Component, the best cable they had: 480 progressive lines where the game offers them, on an HD CRT of the day, whose beam was made for 1080 lines: fine distinct scanlines. S-video and composite send them interlaced, with the games' own blending against flicker."),
-            signal("ps2", "PlayStation 2", "Component, the best cable it had, on an HD CRT of the day: fine distinct scanlines. S-video and composite, the cable in the box, are softer."),
+            signal("gcwii", "GameCube and Wii", "Component, the best cable they had: 480 sharp progressive lines where the game offers them, on a tube seen up close, its lines and phosphor grille in view. S-video and composite send them interlaced, with the games' own blending against flicker."),
+            signal("ps2", "PlayStation 2", "Component, the best cable it had: 480 sharp lines on a tube seen up close, its lines and phosphor grille in view. S-video and composite, the cable in the box, are softer."),
        ))
     }
     id == "battery" -> {

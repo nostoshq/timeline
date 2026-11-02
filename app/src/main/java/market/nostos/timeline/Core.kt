@@ -775,12 +775,14 @@ object DolphinPack {
         // Wii, Super Mario Galaxy 2's sky, Spider-Man 2's shadows) and costs speed.
         "Video_Settings" to listOf("InternalResolution" to if (look.sharp) "2" else "1", "ShaderCompilationMode" to "2", "WaitForShadersBeforeStarting" to "True",
             "EnableGPUTextureDecoding" to "False", "MSAA" to "1", "SSAA" to "False"),
-        // The same television as the other consoles (Crt3d.dolphin, put in Dolphin's Shaders folder below). For the true
-        // picture, the game's own filtering as it copies each picture out (the three-line blend games used to keep 480
-        // interlaced lines from flickering) and its own colour depth (the dither some games relied on); Dolphin's usual
-        // settings drop both, which the sharper look keeps.
+        // The tube (Crt3d.dolphin, put in Dolphin's Shaders folder below). On composite or S-video, the game's own
+        // filtering as it copies each picture out (the three-line blend games used against 480 interlaced lines'
+        // flicker) and its own color depth (the dither a set's signal blended): a set showed both. On component, a
+        // sharp 480 progressive picture: games use that blend for interlaced output, and a progressive one never needed
+        // it (with it, GameCube looked soft). The sharper look drops both too.
         "Video_Enhancements" to (if (look.crt3d) listOf("PostProcessingShader" to CRT) else emptyList()) +
-            listOf("DisableCopyFilter" to if (look.sharp) "True" else "False", "ForceTrueColor" to if (look.sharp) "True" else "False"),
+            (if (look.sharp || look.signalOf("gcwii") == "Component") "True" else "False").let { clean ->
+                listOf("DisableCopyFilter" to clean, "ForceTrueColor" to clean) },
         // No on-screen messages: "Compiling shaders" would otherwise show at a game's first start, and a Dolphin that
         // resumes places would say "State not found" at every start without one.
         "Dolphin.Interface" to listOf("OnScreenDisplayMessages" to "False"),
@@ -1868,18 +1870,17 @@ object RetroPack {
      * The 480-line television's settings for a console group (GameCube and Wii in Dolphin, PlayStation 2 in ARMSX2,
      * [Tv480]), from the cable and the set it went to, as those sets really showed them (2026-11-02, research on the
      * displays of each period):
-     *  - Component: an HD CRT of the day (2002 to 2007: Toshiba, Panasonic, Samsung), which scanned a 480-line picture
-     *    itself, progressive (line-doubling an interlaced one), with a beam sized for 1080 lines: so each of the 480
-     *    showed as a fine distinct line, gap rows about 0.4 of a line's light in dark parts and 0.7 in white. Its
-     *    grille, finer still than an SD set's, was past what anyone could see from the sofa.
-     *  - S-video and composite: 480 interlaced lines on a 27 to 32-inch set, whose fields filled each other's gaps.
-     * No grille, then, for any of them. Then the signal as the shader numbers it (0 component, 1 S-video, 2 composite)
-     * and the set's white.
+     *  - Component: 480 progressive lines on a tube that drew them (a professional monitor, or an HD CRT that took
+     *    480p), seen up close, its phosphors in view: each line a beam with a dark gap in dark parts, and the
+     *    phosphor grille.
+     *  - S-video and composite: 480 interlaced lines on a home set, whose fields partly filled each other's gaps.
+     * The grille at the same strength for all. Then the signal as the shader numbers it (0 component, 1 S-video,
+     * 2 composite) and the set's white.
      */
     data class TvLook(val lines: Double, val signal: Int, val white: String, val mask: Double)
     fun tvLook(look: Look, group: String): TvLook {
         val signal = look.signalOf(group)
-        val (lines, mask) = if (signal == "Component") 0.6 to 0.0 else 0.2 to 0.0
+        val (lines, mask) = if (signal == "Component") 1.0 to 0.5 else 0.6 to 0.5
         return TvLook(lines, when (signal) { "Component" -> 0; "S-video" -> 1; else -> 2 }, whiteValue(look), mask)
     }
     /** Which console group each television core draws for: one signal per core. */
@@ -2216,31 +2217,35 @@ object RetroPack {
     fun whiteValue(look: Look) = whites[look.white] ?: "2.0"
 
     /**
-     * GDV as a television showed it (2026-11-02, from a model of the shader's own maths and the set's physics): no glow
-     * and no bright boost, which added light a tube never made and pinned most of a white area at full scale; no extra
-     * saturation; brighter lines widened into the gaps instead (beam_max 2.5), as a tube's beam bloomed with current;
-     * gamma out 2.3, which on this 2.2 panel centers the whole curve on a tube's 2.4; no vignette; and no mask. A
-     * television's mask, about 300 lines across a 19-inch screen, was at the edge of what could be seen from the sofa, and
-     * GDV's own (one dark column in three) is not a phosphor pattern at all: it only took a fifth of the light, and beat
-     * against single-pixel stripes into moiré.
+     * GDV as a tube seen up close, its phosphors in view and not only its lines (2026-11-02): brighter lines widened into the gaps (beam_max 2.5), as a tube's beam bloomed with current;
+     * the phosphors as [Display] says, the lit color let through half again and the others half (maskDark 0.5,
+     * maskLight 1.5), easing in bright parts (thres 0.3), never GDV's own dark column, which is no phosphor pattern; a
+     * tenth more light in bright parts and a tenth of glow, which give back what the mask takes (measured on a bright
+     * frame: the same average light as no mask, white brighter); no extra saturation; gamma out 2.3, which on this 2.2
+     * panel centers the whole curve on a tube's 2.4; no vignette.
      */
     private fun gdvParams(look: Look, glsl: Boolean, display: Display = Display.TV): List<String> = listOf(
-        "sat = \"${satValue(look)}\"", "beam_max = \"2.50\"", "brightboost = \"1.00\"", "glow = \"0.00\"",
+        "sat = \"${satValue(look)}\"", "beam_max = \"2.50\"", "brightboost = \"1.10\"", "glow = \"0.10\"",
         "vignette = \"0.0\"", "scanline = \"${display.scanline}\"",
-    ) + (if (display.mask) listOf("shadowMask = \"1.0\"", "maskDark = \"0.85\"", "maskLight = \"1.15\"") else listOf("shadowMask = \"-1.0\"")) +
+        "shadowMask = \"${display.mask}\"", "maskDark = \"0.5\"", "maskLight = \"1.5\"", "thres = \"0.3\"",
+    ) +
         (if (glsl) listOf("gamma_out = \"2.3\"") else listOf("warpY = \"0.0\"", "gamma_out_red = \"2.3\"", "gamma_out_green = \"2.3\"", "gamma_out_blue = \"2.3\""))
 
+    /** GDV's mask types: a slot mask (red, green and blue slots in staggered rows, most American sets and arcade
+     * monitors) and an aperture grille (red, green and blue stripes, a Trinitron's or a PC monitor's). */
+    const val SLOT = "1.0"
+    const val GRILLE = "2.0"
+
     /**
-     * The screen a console was seen on, where it was not a living-room television (2026-11-02, research on the displays
-     * of each period). An arcade monitor was a television's cousin seen from 0.7 m instead of across a room, so its slot
-     * mask was plainly visible (drawn here gently, a staggered red, green and blue, since a panel's own sub-pixels are
-     * not known), and like Japanese sets and the Wells-Gardner monitors in American cabinets it ran far bluer, about 9300 K.
-     * The Dreamcast's VGA box fed a PC monitor, 15 to 17 inches at 31 kHz, which showed 640 x 480 as fine distinct lines
-     * (a slightly sharper beam, scanline 9) and shipped at 9300 K too. Its mask, about a pixel of a 4.5-inch panel, is
-     * not drawn.
+     * The screen a console was seen on and its phosphors (2026-11-02, research on the displays
+     * of each period). A home set's phosphors were a slot mask on most American sets: red, green and blue slots in
+     * staggered rows. An arcade monitor was a television's cousin seen from 0.7 m, the same kind of mask, and like
+     * Japanese sets and the Wells-Gardner monitors in American cabinets it ran far bluer, about 9300 K. The Dreamcast's
+     * VGA box fed a PC monitor, 15 to 17 inches at 31 kHz, which showed 640 x 480 as fine distinct lines (a slightly
+     * sharper beam, scanline 9) through the stripes of an aperture grille, and shipped at 9300 K too.
      */
-    enum class Display(val scanline: String, val mask: Boolean, val ownWhite: String?) {
-        TV("10.0", false, null), ARCADE("10.0", true, "3.0"), MONITOR("9.0", false, "3.0")
+    enum class Display(val scanline: String, val mask: String, val ownWhite: String?) {
+        TV("10.0", SLOT, null), ARCADE("10.0", SLOT, "3.0"), MONITOR("9.0", GRILLE, "3.0")
     }
     private fun whiteFor(look: Look, display: Display) = display.ownWhite ?: whiteValue(look)
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+- **A CRT you can see.** The tube is now drawn as one seen up close, its phosphors in view and not only its lines:
+  - The television consoles, from the Atari 2600 to the PlayStation, Nintendo 64 and Saturn, get a slot mask, red,
+    green and blue slots in staggered rows, as most American sets had. Arcade monitors get the same, at full
+    strength. The Dreamcast's VGA monitor gets the stripes of an aperture grille.
+  - A tenth more light and a little glow in bright parts give back what the mask takes, so the picture keeps its
+    brightness.
+  - GameCube, Wii and PlayStation 2 get a rebuilt 480-line tube: beams that spread with brightness and dark gaps
+    between them, an aperture grille, and glow. On component, GameCube and Wii now skip the blending games use
+    against flicker on interlaced output, so the picture under the tube is sharp; on S-video and composite they keep it.
+
 ## 1.1.1
 
 - **The measured color calibration on the Retroid Pocket Nova, as it was measured.** The Nova's firmware tints the

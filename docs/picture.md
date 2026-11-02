@@ -56,18 +56,21 @@ ramp.
 
 ## The tube
 
-Then the CRT. The default is GDV Mini Ultra from RetroArch's shader collection, set as a television showed it:
+Then the CRT. The default is GDV Mini Ultra from RetroArch's shader collection, set as a tube seen up close, so you
+see its pixels and not only its lines:
 
 - the tube's own gamma, so shadows and highlights sit where they did;
 - scanlines centered on their lines, with bright lines blooming into the gaps between them;
-- no extra glow, brightness or saturation, so white is never clipped and colors are each console's own;
-- no mask: at a living-room distance a set's mask was at the edge of what you could see.
+- the phosphors: a slot mask, red, green and blue slots in staggered rows, as most American sets had;
+- a tenth more light and a little glow in bright parts, which give back what the mask takes; no extra saturation, so
+  colors are each console's own.
 
 Not every console met a living-room television, and those that didn't get the screen they did meet:
 
-- **Arcade** games get an arcade monitor, seen from arm's length, where its mask showed plainly (drawn gently, since
-  a handheld's own sub-pixels vary), at the 9300 K those monitors ran at.
-- **Dreamcast** on its VGA box gets a PC monitor of 1999: fine, distinct lines at 640 by 480, and 9300 K.
+- **Arcade** games get an arcade monitor, seen from arm's length, its slot mask in plain view, at the 9300 K those
+  monitors ran at.
+- **Dreamcast** on its VGA box gets a PC monitor of 1999: fine, distinct lines at 640 by 480, the red, green and blue
+  stripes of an aperture grille, and 9300 K.
 
 **zFast**, **Easymode**, **Lottes Fast** and **CRT-Pi** are lighter or crisper alternatives, and **Off** draws the
 picture as the console drew it, scaled by whole numbers so every pixel is the same size. **Color boost** lifts color
@@ -112,14 +115,14 @@ struggles can be run at its own resolution from its page: **Options, Run lighter
 ## GameCube, Wii and PlayStation 2
 
 These sent 480 lines: progressive on a component cable, the best they had, and interlaced on composite or S-video.
-Timeline writes Dolphin a television of its own: the signal, the set's color and white, the tube's gamma, each of the
-480 lines drawn whole. On component, the picture is the one an HD CRT of the day made of it: those sets scanned 480
-lines progressive themselves, with a beam made for 1080, so each line showed as a fine distinct scanline. On
-S-video and composite, a set's interlaced fields left only a faint line structure. The grilles were too fine to see
-from a sofa, so none is drawn. GameCube and Wii are drawn at their own resolution
-and told which cable is in, so on composite the games keep the blending they used against flicker. On Retroid devices,
-PlayStation 2 games get the same television through ARMSX2, with **Settings, Device, Set up ARMSX2 for me** switched
-on.
+Timeline writes Dolphin a tube of its own, seen up close: the signal, the set's color and white, the tube's gamma, a
+raster of 480 lines whose beams spread with brightness (a dark line leaves the gap below it nearly black, a bright one
+nearly fills it), the red, green and blue stripes of an aperture grille, and a little glow. On component, each line
+stands apart and the game's picture under it is sharp: Dolphin skips the blending games used against flicker, which
+they need only for interlaced output. On S-video and composite, the lines are softer, as a set's interlaced fields
+left them, and the games keep that blending. GameCube and Wii are drawn at their own resolution and told which cable
+is in. On Retroid devices, PlayStation 2 games get the same tube through ARMSX2, with **Settings, Device, Set up
+ARMSX2 for me** switched on.
 
 ## The handhelds
 

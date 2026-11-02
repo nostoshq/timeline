@@ -526,7 +526,9 @@ class RetroPackTest {
         assertTrue(preset.contains("shader1 = \"/storage/emulated/0/Timeline/retroarch/shaders/timeline/timeline-colour.slang\""))
         assertTrue(preset.contains("shader2 = \"/storage/emulated/0/Timeline/retroarch/shaders/timeline/crt-gdv-3d.slang\""))
         for (line in listOf("wrap_mode2 = \"clamp_to_border\"", "scale_type2 = \"viewport\"", "LCD_ANTI_RETENTION_TOGGLE = \"0.0\"", "GAIN_VS_BLUR = \"0.5\"",
-            "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "sat = \"1.00\"", "glow = \"0.00\"", "gdv_hires = \"400.0\"")) assertTrue(line, preset.contains(line))
+            "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "sat = \"1.00\"", "glow = \"0.10\"", "brightboost = \"1.10\"", "gdv_hires = \"400.0\"",
+            // an arcade monitor, seen up close: its slot mask in plain view, and its 9300 K white
+            "shadowMask = \"1.0\"", "maskDark = \"0.5\"", "maskLight = \"1.5\"", "tl_white = \"3.0\"")) assertTrue(line, preset.contains(line))
         assertTrue(files.getValue("Snes9x/Snes9x.cfg").contains("video_shader_subframes = \"2\""))
         // the handhelds as their own screens were
         assertTrue(files.getValue("Gambatte/gb.slangp").let { it.contains("handheld/gameboy.slangp") && it.contains("integer_mode = \"1.000000\"") })
@@ -1079,8 +1081,12 @@ class ExtrasTest {
         assertEquals("True", Ini.value(g, "Core", "ProgressiveScan"))           // component, the best cable they had
         assertEquals("False", Ini.value(DolphinPack.docs(Look(signal = mapOf("gcwii" to "Composite")), "Android/1/Retroid Pocket Controller")
             .single { it.path == "GameSettings/G.ini" }.text!!, "Core", "ProgressiveScan"))
-        assertEquals("False", Ini.value(g, "Video_Enhancements", "DisableCopyFilter"))
-        assertEquals("False", Ini.value(g, "Video_Enhancements", "ForceTrueColor"))
+        // component: the sharp progressive picture; composite: the game's own blending against flicker, and its dither
+        assertEquals("True", Ini.value(g, "Video_Enhancements", "DisableCopyFilter"))
+        assertEquals("True", Ini.value(g, "Video_Enhancements", "ForceTrueColor"))
+        val gc = DolphinPack.docs(Look(signal = mapOf("gcwii" to "Composite")), "Android/1/Retroid Pocket Controller").single { it.path == "GameSettings/G.ini" }.text!!
+        assertEquals("False", Ini.value(gc, "Video_Enhancements", "DisableCopyFilter"))
+        assertEquals("False", Ini.value(gc, "Video_Enhancements", "ForceTrueColor"))
         val gs = DolphinPack.docs(Look(sharp = true, signal = mapOf("gcwii" to "Component")), "Android/1/Retroid Pocket Controller").single { it.path == "GameSettings/G.ini" }.text!!
         assertEquals("2", Ini.value(gs, "Video_Settings", "InternalResolution")); assertEquals("True", Ini.value(gs, "Core", "ProgressiveScan"))
         assertEquals("True", Ini.value(gs, "Video_Enhancements", "DisableCopyFilter"))
@@ -1781,7 +1787,8 @@ class ExtrasTest {
             "shader6 = \"/h/shaders/timeline/timeline-colour.slang\"", "tl_white = \"2.0\"",
             "shader7 = \"/h/shaders/timeline/crt-gdv-3d.slang\"", "scale_type7 = \"viewport\"", "gdv_hires = \"400.0\"",
             "GAIN_VS_BLUR = \"0.5\"", "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "ntsc_rainbow1 = \"1.0\"",
-            "glow = \"0.00\"", "brightboost = \"1.00\"", "sat = \"1.00\"", "beam_max = \"2.50\"", "shadowMask = \"-1.0\"", "vignette = \"0.0\"", "gamma_out_red = \"2.3\""))
+            "glow = \"0.10\"", "brightboost = \"1.10\"", "sat = \"1.00\"", "beam_max = \"2.50\"", "shadowMask = \"1.0\"", "maskDark = \"0.5\"",
+            "maskLight = \"1.5\"", "vignette = \"0.0\"", "gamma_out_red = \"2.3\""))
             assertTrue(line, md.contains(line))
         // parameters come after every pass
         assertTrue(md.indexOf("cust_artifacting") > md.indexOf("shader7"))
@@ -1819,9 +1826,11 @@ class ExtrasTest {
 
     @Test fun gameCubeWiiAndPs2GetATelevisionsFourHundredEightyLines() {
         val dol = Crt3d.dolphin(0.25, 2, "2.0", 0.0)
-        // GameCube and Wii send 480 lines: the spacing is measured on the screen, the structure faint, in light
-        assertTrue(dol.contains("/ 480.0") && dol.contains("dFdy(GetCoordinates().y)") && dol.contains("float3 tv(") && dol.contains("whiteOf("))
-        assertTrue(dol.contains("OptionName = lines\nMinValue = 0.0\nMaxValue = 0.9\nStepAmount = 0.05\nDefaultValue = 0.25\n"))
+        // GameCube and Wii send 480 lines: a 480-line raster, its beams and gaps in light, and the phosphor grille on the panel's columns
+        assertTrue(dol.contains("RASTER = 480.0") && dol.contains("dFdy(GetCoordinates().y)") && dol.contains("float3 tv(") && dol.contains("whiteOf("))
+        assertTrue(dol.contains("mod(floor(frag.x), 3.0)"))
+        assertTrue(dol.contains("OptionName = lines\nMinValue = 0.0\nMaxValue = 1.0\nStepAmount = 0.05\nDefaultValue = 0.25\n"))
+        assertTrue(dol.contains("OptionName = mask\nMinValue = 0.0\nMaxValue = 0.8\n"))
         assertTrue(dol.contains("OptionName = mask") && dol.contains("OptionName = signal") && !dol.contains("\${"))
         assertFalse(dol.contains("mod(floor(gl_FragCoord.y), 4.0)") || dol.contains("lift"))
         // the same for PlayStation 2, as a slang shader and the preset ARMSX2 reads
@@ -1830,11 +1839,11 @@ class ExtrasTest {
         for (line in listOf("shader0 = \"timeline-tv.slang\"", "scale_type0 = \"viewport\"", "tv_lines = \"0.25\"", "tv_signal = \"2.0\"", "tv_white = \"2.0\""))
             assertTrue(line, pre.contains(line))
         assertEquals("timeline-crt.slangp", Tv480.PRESET)
-        // the settings each takes: a television's faint lines, or the sharper look's monitor lines; the cable; the white
-        assertEquals(RetroPack.TvLook(0.6, 0, "2.0", 0.0), RetroPack.tvLook(Look(), "ps2"))
-        assertEquals(RetroPack.TvLook(0.2, 2, "2.0", 0.0), RetroPack.tvLook(Look(signal = mapOf("ps2" to "Composite")), "ps2"))
-        assertEquals(RetroPack.TvLook(0.6, 0, "2.0", 0.0), RetroPack.tvLook(Look(), "gcwii"))
-        assertEquals(RetroPack.TvLook(0.2, 1, "3.0", 0.0), RetroPack.tvLook(Look(white = "Japanese TV (9300 K)", signal = mapOf("gcwii" to "S-video")), "gcwii"))
+        // the settings each takes: component's full line structure, interlaced cables' partly filled gaps; the grille for all; the cable; the white
+        assertEquals(RetroPack.TvLook(1.0, 0, "2.0", 0.5), RetroPack.tvLook(Look(), "ps2"))
+        assertEquals(RetroPack.TvLook(0.6, 2, "2.0", 0.5), RetroPack.tvLook(Look(signal = mapOf("ps2" to "Composite")), "ps2"))
+        assertEquals(RetroPack.TvLook(1.0, 0, "2.0", 0.5), RetroPack.tvLook(Look(), "gcwii"))
+        assertEquals(RetroPack.TvLook(0.6, 1, "3.0", 0.5), RetroPack.tvLook(Look(white = "Japanese TV (9300 K)", signal = mapOf("gcwii" to "S-video")), "gcwii"))
     }
 
     @Test fun aFrozenDolphinIsToldApartFromAnIdleOne() {
@@ -2033,7 +2042,7 @@ class ExtrasTest {
 
     @Test fun gameCubeAndWiiGetTheCrtAndAGameThatWillNotStartGetsOpenGl() {
         val docs = DolphinPack.docs(Look(dolphinGlCodes = mapOf("GFRE00" to true, "GM4E01" to false)), "Retroid Pocket Controller")
-        assertEquals(Crt3d.dolphin(0.6, 0, "2.0", 0.0), docs.single { it.path == "Shaders/Timeline CRT.glsl" }.text)
+        assertEquals(Crt3d.dolphin(1.0, 0, "2.0", 0.5), docs.single { it.path == "Shaders/Timeline CRT.glsl" }.text)
         assertTrue(docs.single { it.path == "GameSettings/G.ini" }.text!!.contains("[Video_Enhancements]\nPostProcessingShader = Timeline CRT\n"))
         assertEquals(mapOf("Core" to mapOf("GFXBackend" to "OGL"), "Video_Settings" to mapOf("ShaderCompilationMode" to "0")),
             docs.single { it.path == "GameSettings/GFRE00.ini" }.set)
