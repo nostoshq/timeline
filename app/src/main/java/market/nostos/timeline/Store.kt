@@ -56,6 +56,7 @@ class Prefs(ctx: Context) {
     /** Written before returning, for the one value that must not be lost if the app stops a moment later. */
     fun putNow(k: String, v: String) { sp.edit().putString(k, v).commit() }
     fun putNow(k: String, v: Boolean) { sp.edit().putBoolean(k, v).commit() }
+    fun removeNow(keys: Collection<String>) { sp.edit().apply { keys.forEach { remove(it) } }.commit() }
     fun put(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
     fun put(k: String, v: Int) = sp.edit().putInt(k, v).apply()
     fun strings(k: String): Set<String> = sp.getStringSet(k, emptySet())?.toSet() ?: emptySet()
@@ -697,6 +698,9 @@ object Runner {
         put(File(dir, Signal.SLANG), Signal.slang)
         put(File(dir, SteadyBeam.SLANG), SteadyBeam.slang)
         put(File(dir, Signal.GLSL), Signal.glsl)
+        put(File(dir, Colour.SLANG), Colour.slang)
+        put(File(dir, Colour.GLSL), Colour.glsl)
+        put(File(dir, GenesisDac.SLANG), GenesisDac.slang)
         val gdv = File(p.slang, "crt/shaders/crt-gdv-mini-ultra.slang")
         val made = if (gdv.isFile) runCatching { Crt3d.slang(gdv.readText()) }.getOrNull() else null
         if (made != null) put(File(dir, Crt3d.SLANG), made)
@@ -984,6 +988,12 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             prefs.putNow("eq.curve", Eq.format(Eq.presets.getValue("Neutral")))
             prefs.putNow("eq.measured", SpeakerChain.MEASURED)
         }
+        // The true picture (2026-11-02): the picture settings chosen before it go back to its defaults, once; anything
+        // chosen after stays.
+        if (prefs.str("picture.true") != RetroPack.TRUE_PICTURE) {
+            prefs.removeNow(listOf("ra.sharp", "ra.saturation", "ra.handheld", "ra.white") + RetroPack.signals.keys.map { "ra.signal.$it" })
+            prefs.putNow("picture.true", RetroPack.TRUE_PICTURE)
+        }
         SoundService.sync(ctx)
         forgetEarlyGlFallbacks()
         Installs.onResult = ::installAnswered
@@ -1071,9 +1081,10 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         crt = prefs.str("ra.crt", "GDV Mini Ultra").takeIf { it in RetroPack.crtChoices } ?: "GDV Mini Ultra",
         motion = prefs.str("ra.motion", "Beam simulator").takeIf { it in RetroPack.motionChoices } ?: "Beam simulator",
         motion3d = prefs.str("ra.motion3d", "Beam simulator").takeIf { it in RetroPack.motionChoices } ?: "Beam simulator",
-        handheld = prefs.str("ra.handheld", "LCD3x").takeIf { it in RetroPack.handheldChoices } ?: "LCD3x",
+        handheld = prefs.str("ra.handheld", RetroPack.TRUE_LCD).takeIf { it in RetroPack.handheldChoices } ?: RetroPack.TRUE_LCD,
         transparency = prefs.bool("ra.transparency", true),
-        integer = prefs.bool("ra.integer", true), sharp = prefs.bool("ra.sharp", true), saturation = prefs.int("ra.saturation", 110),
+        integer = prefs.bool("ra.integer", true), sharp = prefs.bool("ra.sharp", false), saturation = prefs.int("ra.saturation", 100),
+        white = prefs.str("ra.white", RetroPack.whiteChoices.first()).takeIf { it in RetroPack.whiteChoices } ?: RetroPack.whiteChoices.first(),
         crt3d = prefs.bool("ra.crt3d", true), reconnectByName = padNamesDiffer(),
         signal = RetroPack.signals.keys.mapNotNull { g -> prefs.str("ra.signal.$g").takeIf { it.isNotEmpty() }?.let { g to it } }.toMap(),
         compatible = prefs.str("ra.draw", "Vulkan") == "Compatible", dolphinGl = prefs.str("dol.draw", "Vulkan") == "OpenGL",
@@ -1083,6 +1094,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         lag = prefs.str("ra.lag", if (prefs.bool("ra.runahead", false)) "Run-ahead" else "Preemptive frames").takeIf { it in RetroPack.lagChoices } ?: "Preemptive frames",
         hz = gameHz(),
         tv = tvDisplays().isNotEmpty(),
+        panel = panelSize(),
         upright = prefs.str("ra.upright", "Right side down").takeIf { it in RetroPack.uprightChoices } ?: "Right side down",
         speakers = if (prefs.bool("eq.retroarch", false)) Eq.parse(prefs.str("eq.curve")) else null,
         achievements = if (prefs.bool("ra.cheevos", false) && prefs.str("ra.cheevosUser").isNotBlank())
@@ -2106,6 +2118,13 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     private val tvCleared = HashSet<Int>()        // displays handed back to their own choice, while they stay connected
     private var tvJob: Job? = null
 
+    /** The built-in screen's size in pixels, the long side first, for layouts made of whole screen pixels. */
+    private fun panelSize(): Pair<Int, Int> = runCatching {
+        val dm = ctx.getSystemService(android.hardware.display.DisplayManager::class.java)
+        val mode = dm.getDisplay(android.view.Display.DEFAULT_DISPLAY).mode
+        maxOf(mode.physicalWidth, mode.physicalHeight) to minOf(mode.physicalWidth, mode.physicalHeight)
+    }.getOrDefault(1280 to 960)
+
     private fun tvDisplays(): List<android.view.Display> = runCatching {
         val dm = ctx.getSystemService(android.hardware.display.DisplayManager::class.java) ?: return@runCatching emptyList()
         dm.getDisplays(android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION).filter {
@@ -2957,7 +2976,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // choice, while ARMSX2 is closed (it keeps its preferences in memory while it runs).
             // Only when the player has asked for it: it edits ARMSX2's own files.
             if (emulatorId == "armsx2" && root && prefs.bool("ps2.manage", false)) withContext(Dispatchers.IO) {
-                Ps2Look.sync(ctx, plan.pkg)
+                Ps2Look.sync(ctx, plan.pkg, RetroPack.tvLook(look(), "ps2").let { t -> Tv480.preset(t.lines, t.signal, t.white, t.mask) })
                 if (Proc.running(ctx, plan.pkg) == false) Ps2Resume.apply(ctx, plan.pkg, look().resume)
             }
             // Dolphin's files are reached through Dolphin itself. If it does not answer, the game is started all the same.

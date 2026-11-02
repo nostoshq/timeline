@@ -761,18 +761,26 @@ object DolphinPack {
         // A game on two discs is handed both (AutoStartFiles, see Launch.discSet): when it asks for the other one,
         // Dolphin changes it by itself, with no menu and no file picker.
         // GameCube ports 2 to 4 have a controller plugged in for each further port (6 is the standard pad).
-        "Core" to listOf("GFXBackend" to if (look.dolphinGl) "OGL" else "Vulkan", "AutoDiscChange" to "True") +
+        // The cable (Settings, Picture, Signal): a composite or S-video cable sends 480 lines interlaced, and the console
+        // is told so (Dolphin's ProgressiveScan sets the console's own setting); only component sends them progressive,
+        // which under 1% of GameCube owners had (Nintendo's reason for dropping the port).
+        "Core" to listOf("GFXBackend" to if (look.dolphinGl) "OGL" else "Vulkan", "AutoDiscChange" to "True",
+            "ProgressiveScan" to if (look.signalOf("gcwii") == "Component") "True" else "False") +
             (if (pad && !wiiGame) (2..ports).map { "SIDevice${it - 1}" to "6" } else emptyList()),
-        // Twice the detail (1280 by 1056, this panel's size), and shaders built ahead of time and before a game
-        // starts, so the first sight of an effect does not stop the game for a moment.
+        // The console's own detail for the true picture (the sharper look: twice it, 1280 by 1056), and shaders built
+        // ahead of time and before a game starts, so the first sight of an effect does not stop the game for a moment.
         // GPU texture decoding off: with it on, the Nova's Vulkan driver crashes as games start (vkUpdateDescriptorSets;
         // Animal Crossing, Beyond Good & Evil and Eternal Darkness every time, and all three run with it off).
         // No MSAA: the picture is already drawn at twice the console's detail, and MSAA breaks several games (Mario Kart
         // Wii, Super Mario Galaxy 2's sky, Spider-Man 2's shadows) and costs speed.
-        "Video_Settings" to listOf("InternalResolution" to "2", "ShaderCompilationMode" to "2", "WaitForShadersBeforeStarting" to "True",
+        "Video_Settings" to listOf("InternalResolution" to if (look.sharp) "2" else "1", "ShaderCompilationMode" to "2", "WaitForShadersBeforeStarting" to "True",
             "EnableGPUTextureDecoding" to "False", "MSAA" to "1", "SSAA" to "False"),
-        // The same CRT as the other consoles (Crt3d.dolphin, put in Dolphin's Shaders folder below), at the game's own lines.
-        "Video_Enhancements" to if (look.crt3d) listOf("PostProcessingShader" to CRT) else emptyList(),
+        // The same television as the other consoles (Crt3d.dolphin, put in Dolphin's Shaders folder below). For the true
+        // picture, the game's own filtering as it copies each picture out (the three-line blend games used to keep 480
+        // interlaced lines from flickering) and its own colour depth (the dither some games relied on); Dolphin's usual
+        // settings drop both, which the sharper look keeps.
+        "Video_Enhancements" to (if (look.crt3d) listOf("PostProcessingShader" to CRT) else emptyList()) +
+            listOf("DisableCopyFilter" to if (look.sharp) "True" else "False", "ForceTrueColor" to if (look.sharp) "True" else "False"),
         // No on-screen messages: "Compiling shaders" would otherwise show at a game's first start, and a Dolphin that
         // resumes places would say "State not found" at every start without one.
         "Dolphin.Interface" to listOf("OnScreenDisplayMessages" to "False"),
@@ -867,7 +875,7 @@ object DolphinPack {
                 out += Doc("Config/Profiles/Wiimote/$PROFILE ${i + 2}.ini", text = wiiRemote(d, sideways = false))
             }
         }
-        if (look.crt3d) out += Doc("Shaders/$CRT.glsl", text = Crt3d.dolphin)
+        if (look.crt3d) out += RetroPack.tvLook(look, "gcwii").let { t -> Doc("Shaders/$CRT.glsl", text = Crt3d.dolphin(t.lines, t.signal, t.white, t.mask)) }
         for (letter in gameCube) out += Doc("GameSettings/$letter.ini", text = family(look, wiiGame = false, pad = pad, ports = ports.size))
         for (letter in wii) out += Doc("GameSettings/$letter.ini", text = family(look, wiiGame = true, pad = pad, ports = ports.size))
         // Dolphin keeps a game's own settings in a file named after its full ID: only the control lines are added.
@@ -1572,7 +1580,11 @@ object SpeakerChain {
     const val HIGH_PASS = 150.0
 
     /** When [measured] was measured; a change to it should change this too, so a tone set on the old one is reset once. */
-    const val MEASURED = "2026-10-29"
+    const val MEASURED = "2026-11-02.2"
+
+    /** The most any band is lifted: [TOP_LIFT] above 6.3 kHz, where these speakers fall away steeply, [LIFT] below. */
+    const val LIFT = 6.0
+    const val TOP_LIFT = 12.0
 
     /** Each EQ band's top edge, in Hz: third octaves where the speakers play, wider below and above. */
     val edges = floatArrayOf(
@@ -1581,19 +1593,24 @@ object SpeakerChain {
    )
 
     /**
-     * The correction for each band of [edges], in dB, measured on a Retroid Pocket Nova at full media volume:
-     * sweeps through the game sound path, recorded with a measurement microphone beside it, each speaker on its own, then the
-     * gains fitted and checked on the device until the result held within about 1.3 dB (rms) from 500 Hz to 6.3 kHz.
-     * The microphone sat to one side of the device, so the top end is likely brighter for the player than it measured;
-     * the lift there stops at 6 dB for that reason.
+     * The correction for each band of [edges], in dB, measured on a Retroid Pocket Nova: sweeps through the game sound
+     * path, recorded with a laptop's microphone, each speaker on its own. Fitted to four microphone places at once, so the
+     * room's part of each cancels: the device held as it is played (counted twice), standing in front of the microphone
+     * (twice), lying on a desk, and to one side (its top end left out, since a speaker's treble is heard from the front).
+     * The target is flat to 2 kHz, then falling 1.5 dB an octave: the gentle slope a speaker heard close up sounds even
+     * with, and some margin against a laptop microphone's own treble. Checked on the device at 1.3 dB (rms) from that
+     * target, 400 Hz to 6.3 kHz, against 2.7 for the bare speakers; the chain did what its bands say within 0.85 dB.
+     * Below about 550 Hz the amplifiers give up some 4 dB at full volume to protect the cones, so the low notes are
+     * thinner up there whatever this does; above 630 Hz the shape is the same at any volume. The speakers fall away
+     * steeply above 6.5 kHz (in the hands, 8 kHz is 20 dB down bare), so the top bands lift up to [TOP_LIFT].
      */
     val measured = floatArrayOf(
         0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f,     // up to 315 Hz: nothing; the speakers barely play here
         2.5f, 3f,                                   // 315 to 500 Hz: a little more of the lowest notes they can play
-        1.4f, -6f, -2.9f, -1.3f,                    // 500 Hz to 1.25 kHz: the boxy bump around 700 Hz taken down
-        -0.4f, -1.4f, 1.9f, 3.3f, -0.1f,            // 1.25 to 4 kHz: nearly flat; a lift where both speakers dip
-        -4.7f, -4.4f,                               // 4 to 6.3 kHz: the sharp peak at 5 kHz taken down
-        6f, 6f, 6f, 6f, 3f, 0f,                     // above 6.3 kHz, where they fall away: a lift, eased off above hearing
+        -0.9f, -2.1f, -2.2f, -1.8f,                 // 500 Hz to 1.25 kHz: the boxy bump around 1 kHz taken down
+        -2f, -1.4f, 0f, 0.9f, 0.8f,                 // 1.25 to 4 kHz: nearly flat (a hand around the device lifts 2.5 kHz)
+        -5.9f, -3f,                                 // 4 to 6.3 kHz: the sharp peak at 5 kHz taken down
+        7.6f, 12f, 12f, 6f, 3f, 0f,                 // above 6.3 kHz, where they fall away steeply: a lift, eased off above hearing
    )
 
     /** The correction at a frequency, in dB: the high-pass and the measured band it falls in. */
@@ -1612,7 +1629,7 @@ object SpeakerChain {
         val bottom = if (i == 0) 40.0 else edges[i - 1].toDouble()
         val mid = kotlin.math.sqrt(bottom * top)
         val g = correction(mid) + Eq.gainAt(mid.toInt(), tone) / 10.0
-        top to g.coerceIn(-40.0, 6.0).toFloat()
+        top to g.coerceIn(-40.0, if (bottom >= 6300.0) TOP_LIFT else LIFT).toFloat()
     }
 
     /** One compressor band: its top edge (Hz), attack and release (ms), ratio, threshold and knee (dB), make-up gain (dB). */
@@ -1712,22 +1729,24 @@ data class Look(
     val crt: String = "GDV Mini Ultra",
     val motion: String = "Beam simulator",
     val motion3d: String = "Beam simulator",          // the 3D consoles' motion clarity (RetroPack.beam3d)
-    val handheld: String = "LCD3x",
+    val handheld: String = RetroPack.TRUE_LCD,
     val transparency: Boolean = true,                  // Game Boy and Game Boy Color: Pixel Transparency over the grid
     val integer: Boolean = true,
-    val sharp: Boolean = true,                         // the first 3D consoles drawn at four times their own detail
+    val sharp: Boolean = false,                        // the sharper look: 3D consoles drawn past their own detail (off: the true picture)
     val crt3d: Boolean = true,                         // the 3D consoles through the same CRT as the television consoles
     val crt3dSlang: Boolean = true,                    // the collection's GDV could be made into the 3D one (see Crt3d.slang)
     val compatible: Boolean = false,                   // PlayStation and Dreamcast drawn without Vulkan, for a device where their Vulkan path fails
     val dolphinGl: Boolean = false,                    // GameCube and Wii through OpenGL instead of Vulkan
     val dolphinPad: Boolean = true,                    // the launcher maps the device's controls inside Dolphin
-    val saturation: Int = 110,
+    val saturation: Int = 100,
+    val white: String = "American TV (8000 K)",          // the television's white (RetroPack.whites)
     val resume: Boolean = true,
     val sramSeconds: Int = 10,
     val rewind: Boolean = false,
     val lag: String = "Preemptive frames",             // 8 and 16-bit consoles and handhelds: RetroPack.lagChoices
     val hz: Int = 120,
     val tv: Boolean = false,                            // docked to a television as RetroArch starts
+    val panel: Pair<Int, Int> = 1280 to 960,           // the built-in screen's size, landscape: whole-pixel layouts are worked out from it
     val upright: String = "Right side down",
     val speakers: List<Int>? = null,
     val achievements: Achievements? = null,
@@ -1819,24 +1838,71 @@ object RetroPack {
      * TurboGrafx-16 and Atari came with RF or composite only; the Genesis was seen through composite, which is what turns
      * its dithered stripes (Sonic's waterfalls, shadows) into the transparency its artists drew for; the SNES was often on
      * S-video, which keeps it sharp but softens its colour and blends its hi-res see-through effects; arcade monitors took
-     * RGB. Saturn's mesh transparencies were made for composite. PlayStation and Nintendo 64 are given S-video's light
-     * softening, Dreamcast its sharp VGA-like RGB.
+     * RGB. The SNES, too, came with an RF switch and was mostly
+     * seen through composite; S-video needed a cable sold apart and a set that took it, rare before the mid-1990s. RF is
+     * what most of these consoles came with in the box, offered as it was. The PlayStation and Saturn stay on composite
+     * too: their art leaned on it, the PlayStation's dither pattern blending into smooth shading and the Saturn's mesh
+     * see-through (a checkerboard) into transparency; RGB, which both put out, shows them as grain and dots. From the
+     * Nintendo 64 on, each console gets the best connection it had, since nothing in their art needed composite (2026-11-02):
+     * S-video for the Nintendo 64, the best an American one could do (it had no RGB, and its own chip already smoothed
+     * the picture); the VGA box for the Dreamcast, which tells the console a VGA cable is in; component for GameCube,
+     * Wii and PlayStation 2, which then send 480 progressive lines where the game offers them. Composite, the cable in
+     * their boxes, stays a choice.
      */
     val signals: Map<String, List<String>> = linkedMapOf(
-        "nes" to listOf("Composite", "S-video", "RGB"),
-        "snes" to listOf("S-video", "Composite", "RGB"),
-        "genesis" to listOf("Composite", "S-video", "RGB"),
-        "tg16" to listOf("Composite", "S-video", "RGB"),
+        "nes" to listOf("Composite", "S-video", "RGB", "RF"),
+        "snes" to listOf("Composite", "S-video", "RGB", "RF"),
+        "genesis" to listOf("Composite", "S-video", "RGB", "RF"),
+        "tg16" to listOf("Composite", "S-video", "RGB", "RF"),
         "atari2600" to listOf("Composite", "S-video", "RGB"),
         "arcade" to listOf("RGB", "S-video", "Composite"),
-        "psx" to listOf("S-video", "Composite", "RGB"),
-        "n64" to listOf("S-video", "Composite", "RGB"),
+        "psx" to listOf("Composite", "S-video", "RGB"),
+        "n64" to listOf("S-video", "Composite"),
         "saturn" to listOf("Composite", "S-video", "RGB"),
-        "dreamcast" to listOf("RGB", "S-video", "Composite"),
-   )
+        "dreamcast" to listOf("VGA", "S-video", "Composite"),
+        "gcwii" to listOf("Component", "S-video", "Composite"),
+        "ps2" to listOf("Component", "S-video", "Composite"),
+    )
+
+    /**
+     * The 480-line television's settings for a console group (GameCube and Wii in Dolphin, PlayStation 2 in ARMSX2,
+     * [Tv480]), from the cable and the set it went to, as those sets really showed them (2026-11-02, research on the
+     * displays of each period):
+     *  - Component: an HD CRT of the day (2002 to 2007: Toshiba, Panasonic, Samsung), which scanned a 480-line picture
+     *    itself, progressive (line-doubling an interlaced one), with a beam sized for 1080 lines: so each of the 480
+     *    showed as a fine distinct line, gap rows about 0.4 of a line's light in dark parts and 0.7 in white. Its
+     *    grille, finer still than an SD set's, was past what anyone could see from the sofa.
+     *  - S-video and composite: 480 interlaced lines on a 27 to 32-inch set, whose fields filled each other's gaps.
+     * No grille, then, for any of them. Then the signal as the shader numbers it (0 component, 1 S-video, 2 composite)
+     * and the set's white.
+     */
+    data class TvLook(val lines: Double, val signal: Int, val white: String, val mask: Double)
+    fun tvLook(look: Look, group: String): TvLook {
+        val signal = look.signalOf(group)
+        val (lines, mask) = if (signal == "Component") 0.6 to 0.0 else 0.2 to 0.0
+        return TvLook(lines, when (signal) { "Component" -> 0; "S-video" -> 1; else -> 2 }, whiteValue(look), mask)
+    }
     /** Which console group each television core draws for: one signal per core. */
     val signalGroup = mapOf("Nestopia" to "nes", "Snes9x" to "snes", "Genesis Plus GX" to "genesis", "Beetle PCE" to "tg16",
         "Stella" to "atari2600", "FinalBurn Neo" to "arcade", "MAME 2003-Plus" to "arcade")
+
+    /**
+     * How each console's colour signal was timed, for guest's filter (2026-11-02, from the consoles' clocks). The NES and
+     * SNES lines are 227⅓ colour cycles long, so their artifacts step a third of a cycle a line (3-phase), and a hi-res
+     * SNES picture (512 across, as in Kirby's Dream Land 3) is the same signal at twice the pixels (auto_res), which a
+     * television blended. Genesis and Master System lines are exactly 228 cycles, so their artifacts stand still and are
+     * the same on every line: the rainbow in Sonic's waterfalls (ntsc_rainbow1). The Master System's pixels are the
+     * NES's width, which guest's PC Engine timing gives. The TurboGrafx's lines are 227½ cycles (its own timing,
+     * already set by pce) and its 512-wide games take auto_res too.
+     */
+    private fun ntscTiming(group: String, sms: Boolean): List<String> = when {
+        sms -> listOf("ntsc_phase = \"5.0\"", "ntsc_rainbow1 = \"1.0\"")
+        group == "nes" -> listOf("ntsc_phase = \"3.0\"")
+        group == "snes" -> listOf("ntsc_phase = \"3.0\"", "auto_res = \"1.0\"")
+        group == "genesis" -> listOf("ntsc_rainbow1 = \"1.0\"")
+        group == "tg16" -> listOf("auto_res = \"1.0\"")
+        else -> emptyList()
+    }
 
     /**
      * Guest's NTSC filter from the collection (the passes of its ntsc-adaptive preset), as passes [start] to [start]+3:
@@ -1844,7 +1910,7 @@ object RetroPack {
      * Composite keeps its artifacts and fringes (the defaults); S-video has neither. TurboGrafx gets the filter's own
      * PC Engine timing. Returns the pass lines and the parameter lines apart, since parameters go after every pass.
      */
-    fun ntscPasses(p: Paths, start: Int, signal: String, pce: Boolean = false): Pair<List<String>, List<String>> {
+    fun ntscPasses(p: Paths, start: Int, signal: String, pce: Boolean = false, extra: List<String> = emptyList()): Pair<List<String>, List<String>> {
         val dir = "${p.slang}/crt/shaders/guest/advanced/ntsc"
         val a = start; val b = start + 1; val c = start + 2; val d = start + 3
         val passes = listOf(
@@ -1855,8 +1921,8 @@ object RetroPack {
             "scale_type_x$c = \"source\"", "scale_x$c = \"0.5\"", "scale_type_y$c = \"source\"", "scale_y$c = \"1.0\"",
             "shader$d = \"$dir/ntsc-pass3.slang\"", "filter_linear$d = \"true\"", "scale_type$d = \"source\"", "scale$d = \"1.0\"",
        )
-        val af = if (signal == "Composite") "1.0" else "0.0"
-        val params = listOf("cust_artifacting = \"$af\"", "cust_fringing = \"$af\"") + (if (pce) listOf("ntsc_phase = \"5.0\"") else emptyList())
+        val af = when (signal) { "RF" -> "2.0"; "Composite" -> "1.0"; else -> "0.0" }   // the filter's own values for each
+        val params = listOf("cust_artifacting = \"$af\"", "cust_fringing = \"$af\"") + (if (pce) listOf("ntsc_phase = \"5.0\"") else emptyList()) + extra
         return passes to params
     }
     val motionChoices = listOf("Beam simulator", "Black frames", "Off")
@@ -1874,6 +1940,93 @@ object RetroPack {
     private val quickSound = mapOf("audio_latency" to "48")
     private val lagOff = mapOf("run_ahead_enabled" to "false", "preemptive_frames_enable" to "false")
     private val lcds = linkedMapOf("LCD3x" to "handheld/lcd3x.slangp", "LCD grid" to "handheld/lcd-grid-v2.slangp")
+    /** The handhelds' default screen: each as its own screen was (the true picture, 2026-11-02). */
+    const val TRUE_LCD = "As the console"
+    /** When the true picture's defaults came in: a version saved before then is put back to them once (Store). */
+    const val TRUE_PICTURE = "2026-11-02"
+    private const val CORE = "22"
+    private const val CUSTOM = "23"
+
+    /**
+     * The original Game Boy's screen: the collection's Game Boy dot-matrix shader, the one that draws it as it was made,
+     * dark dots of ink over a green reflector that shows between them, each dot's shadow on the reflector, and the slow
+     * screen's smear (response 0.555: an STN panel of its day kept about half of each frame into the next, which also
+     * turned the 30 Hz flicker some games used into the see-through it was meant as). It wants the core's plain grey
+     * levels and no blending of its own (gambatte). Pixel-perfect dots at this panel's six times.
+     */
+    private fun gbScreen(p: Paths) = "#reference \"${p.slang}/handheld/gameboy.slangp\"\n" +
+        "integer_mode = \"1.000000\"\nresponse_time = \"0.555000\"\npalette = \"0.000000\"\n"
+
+    /**
+     * The Game Boy Color's screen: its pixels' measured shape (authentic_gbc, from a photo of the screen's sub-pixels),
+     * the unlit screen showing through pale pixels with a neutral backing (Pixel Transparency; the core already did the
+     * colour), and a third of each frame kept into the next. The response pass comes first: it compares frames as the
+     * core made them.
+     */
+    private fun gbcScreen(p: Paths) = listOf(
+        "shaders = \"4\"",
+        "shader0 = \"${p.slang}/motionblur/shaders/response-time.slang\"", "filter_linear0 = \"false\"", "scale_type0 = \"source\"", "scale0 = \"1.0\"",
+        "shader1 = \"${p.slang}/handheld/shaders/authentic_gbc/to_lin_fast.slang\"", "filter_linear1 = \"false\"", "scale_type1 = \"source\"", "scale1 = \"1.0\"",
+        "srgb_framebuffer1 = \"true\"",
+        "shader2 = \"${p.slang}/handheld/shaders/authentic_gbc/authentic_gbc_fast.slang\"", "filter_linear2 = \"false\"", "scale_type2 = \"viewport\"",
+        "shader3 = \"${p.slang}/handheld/shaders/pixel_transparency/pixel_transparency.slang\"", "filter_linear3 = \"false\"", "scale_type3 = \"viewport\"",
+        "response_time = \"0.333000\"", "PT_PALETTE = \"4.000000\"", "PT_POLARIZER = \"0.000000\"", "PT_HIGHLIGHTS = \"0.000000\"",
+    ).joinToString("\n") + "\n"
+
+    /**
+     * The Game Boy Advance's screen: the original's unlit reflective screen, with its darker, deeper colour (the
+     * collection's GBA colour profile, done in the shader so all 32 grey levels survive; the core's own merged the
+     * darkest), under an LCD grid brightened a little, since this panel lights it from behind.
+     */
+    private fun gbaScreen(p: Paths) = "#reference \"${p.slang}/presets/handheld-plus-color-mod/lcd-grid-v2-gba-color.slangp\"\n" +
+        "gain = \"1.5\"\nRSUBPIX_R = \"0.75\"\nGSUBPIX_G = \"0.75\"\nBSUBPIX_B = \"0.75\"\n"
+
+    /** Nintendo DS: the original DS's colour (its tinted grey levels too), then a scaler that keeps pixels even at any size. */
+    private fun dsScreen(p: Paths) = listOf(
+        "shaders = \"4\"",
+        "shader0 = \"${p.slang}/reshade/shaders/LUT/multiLUT.slang\"", "filter_linear0 = \"false\"", "scale_type0 = \"source\"", "scale0 = \"1.0\"",
+        "shader1 = \"${p.slang}/handheld/shaders/color/nds-color.slang\"", "filter_linear1 = \"false\"", "scale_type1 = \"source\"", "scale1 = \"1.0\"",
+        "shader2 = \"${p.slang}/pixel-art-scaling/shaders/pixel_aa/to_lin.slang\"", "filter_linear2 = \"false\"", "scale_type2 = \"source\"", "scale2 = \"1.0\"",
+        "float_framebuffer2 = \"true\"",
+        "shader3 = \"${p.slang}/pixel-art-scaling/shaders/pixel_aa/pixel_aa.slang\"", "filter_linear3 = \"true\"", "scale_type3 = \"viewport\"",
+        "textures = \"SamplerLUT1;SamplerLUT2\"",
+        "SamplerLUT1 = \"${p.slang}/reshade/shaders/LUT/64.png\"", "SamplerLUT1_linear = \"true\"",
+        "SamplerLUT2 = \"${p.slang}/handheld/shaders/color/lut/nds-grey.png\"", "SamplerLUT2_linear = \"true\"",
+        "LUT_selector_param = \"2.000000\"",
+    ).joinToString("\n") + "\n"
+
+    /**
+     * Gambatte's options. [gbc] false: the original Game Boy's plain grey levels and no blending, for its dot-matrix
+     * screen ([gbScreen]) to colour and smear; with another handheld screen chosen, the core's own "GB - DMG" palette
+     * (the earlier "Special 1" was one of its extra palettes, not a Game Boy's) and its blending. [gbc] true: the
+     * Color's own colour, corrected the accurate way for its central front light, with a Game Boy game shown in the
+     * colours a Color gave it.
+     */
+    private fun gambatte(look: Look, gbc: Boolean): Map<String, String> {
+        val trueLcd = look.handheld == TRUE_LCD
+        val base = mapOf("gambatte_gbc_color_correction" to "GBC only", "gambatte_gbc_color_correction_mode" to "accurate",
+            "gambatte_gbc_frontlight_position" to "central", "gambatte_dark_filter_level" to "0")
+        return base + when {
+            gbc -> mapOf("gambatte_gb_colorization" to "GBC", "gambatte_mix_frames" to if (trueLcd) "disabled" else "mix")
+            trueLcd -> mapOf("gambatte_gb_colorization" to "disabled", "gambatte_mix_frames" to "disabled")
+            else -> mapOf("gambatte_gb_colorization" to "internal", "gambatte_gb_internal_palette" to "GB - DMG", "gambatte_mix_frames" to "mix")
+        }
+    }
+
+    /**
+     * The Game Gear's picture on the built-in screen at its own 6:5 pixel shape, 6 x 5 screen pixels to a pixel or a
+     * whole multiple of that: on a 4:3 screen of at least 960 x 720 only. Null elsewhere, and on a television.
+     */
+    fun gameGearSize(look: Look): Pair<Int, Int>? {
+        val (w, h) = look.panel
+        if (look.tv || w * 3 != h * 4) return null
+        val k = minOf(w / 960, h / 720)
+        return if (k >= 1) 960 * k to 720 * k else null
+    }
+
+    /** Genesis Plus GX's options: [borders], the 16 lines of border colour a set showed around a 224-line picture. */
+    private fun genesisOpt(borders: Boolean) = mapOf("genesis_plus_gx_system_bram" to "per game",
+        "genesis_plus_gx_overscan" to if (borders) "top/bottom" else "disabled", "genesis_plus_gx_aspect_ratio" to "auto")
     // Pixel Transparency, from the shader pack on the card: on the unlit Game Boy and Game Boy Color screens, white and
     // pale pixels let the screen show through instead of glowing, with a faint shadow under the picture. Drawn over the
     // grid chosen for the handhelds (the pack has a preset for each), or alone when that is Off.
@@ -1882,7 +2035,7 @@ object RetroPack {
         "LCD grid" to "presets/pixel_transparency/pixel_transparency-lcd-grid-v2.slangp",
         "Off" to "handheld/pixel_transparency.slangp",
    )
-    val handheldChoices: List<String> = lcds.keys.toList() + "Off"
+    val handheldChoices: List<String> = listOf(TRUE_LCD) + lcds.keys.toList() + "Off"
     val uprightChoices = listOf("Right side down", "Left side down", "Keep it level")
 
     /**
@@ -1939,8 +2092,6 @@ object RetroPack {
 
     private fun b(v: Boolean) = if (v) "true" else "false"
 
-    /** RetroArch's aspect_ratio_index for square pixels (1:1 PAR); 22 is the shape the core reports. */
-    private const val SQUARE = "21"
 
     /** The keys in retroarch.cfg that the launcher owns. Everything else in the file is left as RetroArch wrote it. */
     fun base(look: Look, p: Paths): Map<String, String> = linkedMapOf(
@@ -2057,15 +2208,64 @@ object RetroPack {
     private fun satValue(look: Look) = "${look.saturation / 100}.${(look.saturation % 100).toString().padStart(2, '0')}"
 
     /**
+     * The television's white, for [Colour]'s pass: American sets averaged 8,000 K, far bluer than the broadcast
+     * standard's 6,500 K, and Japanese ones ran at 9,300 K (Colour has the sources).
+     */
+    val whites: Map<String, String> = linkedMapOf("American TV (8000 K)" to "2.0", "Studio (6500 K)" to "0.0", "Japanese TV (9300 K)" to "3.0")
+    val whiteChoices: List<String> get() = whites.keys.toList()
+    fun whiteValue(look: Look) = whites[look.white] ?: "2.0"
+
+    /**
+     * GDV as a television showed it (2026-11-02, from a model of the shader's own maths and the set's physics): no glow
+     * and no bright boost, which added light a tube never made and pinned most of a white area at full scale; no extra
+     * saturation; brighter lines widened into the gaps instead (beam_max 2.5), as a tube's beam bloomed with current;
+     * gamma out 2.3, which on this 2.2 panel centers the whole curve on a tube's 2.4; no vignette; and no mask. A
+     * television's mask, about 300 lines across a 19-inch screen, was at the edge of what could be seen from the sofa, and
+     * GDV's own (one dark column in three) is not a phosphor pattern at all: it only took a fifth of the light, and beat
+     * against single-pixel stripes into moiré.
+     */
+    private fun gdvParams(look: Look, glsl: Boolean, display: Display = Display.TV): List<String> = listOf(
+        "sat = \"${satValue(look)}\"", "beam_max = \"2.50\"", "brightboost = \"1.00\"", "glow = \"0.00\"",
+        "vignette = \"0.0\"", "scanline = \"${display.scanline}\"",
+    ) + (if (display.mask) listOf("shadowMask = \"1.0\"", "maskDark = \"0.85\"", "maskLight = \"1.15\"") else listOf("shadowMask = \"-1.0\"")) +
+        (if (glsl) listOf("gamma_out = \"2.3\"") else listOf("warpY = \"0.0\"", "gamma_out_red = \"2.3\"", "gamma_out_green = \"2.3\"", "gamma_out_blue = \"2.3\""))
+
+    /**
+     * The screen a console was seen on, where it was not a living-room television (2026-11-02, research on the displays
+     * of each period). An arcade monitor was a television's cousin seen from 0.7 m instead of across a room, so its slot
+     * mask was plainly visible (drawn here gently, a staggered red, green and blue, since a panel's own sub-pixels are
+     * not known), and like Japanese sets and the Wells-Gardner monitors in American cabinets it ran far bluer, about 9300 K.
+     * The Dreamcast's VGA box fed a PC monitor, 15 to 17 inches at 31 kHz, which showed 640 x 480 as fine distinct lines
+     * (a slightly sharper beam, scanline 9) and shipped at 9300 K too. Its mask, about a pixel of a 4.5-inch panel, is
+     * not drawn.
+     */
+    enum class Display(val scanline: String, val mask: Boolean, val ownWhite: String?) {
+        TV("10.0", false, null), ARCADE("10.0", true, "3.0"), MONITOR("9.0", false, "3.0")
+    }
+    private fun whiteFor(look: Look, display: Display) = display.ownWhite ?: whiteValue(look)
+
+    /** [Colour]'s pass as pass [n] of a preset, at the picture's own size. */
+    private fun colourPass(p: Paths, n: Int, glsl: Boolean): List<String> = listOf(
+        "shader$n = \"${p.home}/${Crt3d.DIR}/${if (glsl) Colour.GLSL else Colour.SLANG}\"", "filter_linear$n = \"false\"",
+        "scale_type$n = \"source\"", "scale$n = \"1.0\"")
+
+    /**
      * The 3D consoles' CRT: [halvings] plain passes that each average pairs of rows, which brings a picture drawn at
      * two or four times its detail back to the console's own lines, then GDV drawn over the screen. Flat, with the
-     * television consoles' saturation, and scanlines at whatever number of lines arrives (480 too).
+     * television consoles' saturation.
+     *
+     * The true picture (look.sharp off) averages columns as well as rows, so a picture drawn larger comes back to the
+     * console's own size both ways (Nintendo 64: 1280 x 960 to 320 x 240, close to what its video chip put out), and a
+     * picture of 400 lines or more is drawn without gaps between its lines: those consoles sent 480 interlaced lines,
+     * whose two fields fill each other's gaps on a television. Only the Dreamcast's VGA box, a progressive picture on a
+     * monitor, keeps them. The sharper look keeps the extra detail across and draws lines at every count, as before.
      */
     fun crt3dPreset(look: Look, p: Paths, halvings: Int, glsl: Boolean, beam: Boolean = false, group: String = "", native: Boolean = false): String {
         val dir = "${p.home}/${Crt3d.DIR}"
         val stock = if (glsl) "$dir/${Crt3d.STOCK_GLSL}" else "${p.slang}/stock.slang"
         val crt = if (glsl) "$dir/${Crt3d.GLSL}" else "$dir/${Crt3d.SLANG}"
         val signal = if (group.isEmpty()) "RGB" else look.signalOf(group)
+        val clean = signal == "RGB" || signal == "VGA"
         val lines = ArrayList<String>()
         val params = ArrayList<String>()
         // With the beam (Vulkan only), it comes first, at the picture's own size, as on the television consoles.
@@ -2077,33 +2277,43 @@ object RetroPack {
             val i = b + j
             lines += "shader$i = \"$stock\""
             lines += "filter_linear$i = \"true\""
-            lines += "scale_type_x$i = \"source\""; lines += "scale_x$i = \"1.0\""
+            // With linear filtering, half the size samples exactly between texels: each pass averages a 2 x 2 block.
+            lines += "scale_type_x$i = \"source\""; lines += "scale_x$i = \"" + (if (look.sharp) "1.0" else "0.5") + "\""
             lines += "scale_type_y$i = \"source\""; lines += "scale_y$i = \"0.5\""
         }
         var c = b + halvings
         // The signal, at the console's own lines. A picture at the console's own size (Saturn) takes the collection's NTSC
-        // filter; one handed over wider (PlayStation and Nintendo 64 at four times, Dreamcast at twice) takes Timeline's.
-        if (signal != "RGB") {
+        // filter; the others take Timeline's. Its colour and luma softening are set in parts of a television line (tl_width
+        // 320 for every console), so each console gets the same television.
+        if (!clean) {
             if (native && !glsl) {
                 val (passes, ps) = ntscPasses(p, c, signal)
                 lines += passes; params += ps; c += 4
+                // Saturn's hi-res modes are 640 and 704 wide: the filter then counts its subcarrier in pairs of pixels.
+                if (group == "saturn") params += "auto_res = \"1.0\""
             } else {
                 lines += "shader$c = \"$dir/${if (glsl) Signal.GLSL else Signal.SLANG}\""
                 lines += "filter_linear$c = \"true\""
                 lines += "scale_type$c = \"source\""; lines += "scale$c = \"1.0\""
                 params += "tl_signal = \"${Signal.value(signal)}\""
-                params += "tl_width = \"" + (if (group == "dreamcast") "640.0" else "320.0") + "\""
+                params += "tl_width = \"320.0\""
                 c += 1
             }
         }
+        // The set's own colour and white, after the signal, as in the set itself.
+        val display = if (signal == "VGA") Display.MONITOR else Display.TV
+        lines += colourPass(p, c, glsl); params += "tl_white = \"${whiteFor(look, display)}\""; c += 1
         lines += "shader$c = \"$crt\""
         lines += "filter_linear$c = \"false\""
         if (!glsl) lines += "wrap_mode$c = \"clamp_to_border\""
         lines += "scale_type$c = \"viewport\""
-        if (!glsl) params += "warpY = \"0.0\""
-        params += "sat = \"${satValue(look)}\""
-        params += "gdv_hires = \"0.0\""
-        if (b == 1 && !steady) beamSettings(params)
+        params += gdvParams(look, glsl, display)
+        // 480-line pictures. On a television cable (composite, S-video) their interlaced fields blend on a set: GDV
+        // averages each pair of lines (gdv_hires 400). Through VGA or RGB, or in the sharper look, each line is drawn as
+        // its own beam, one panel row of beam and one of gap (Crt3d.slang's quarter-line phase): fine distinct lines, as a
+        // monitor showed them.
+        params += "gdv_hires = \"" + (if (look.sharp || clean) "0.0" else "400.0") + "\""
+        if (b == 1) { if (steady) params += "GAIN_VS_BLUR = \"0.5\"" else beamSettings(params) }
         return (listOf("shaders = \"${c + 1}\"") + lines + params).joinToString("\n") + "\n"
     }
 
@@ -2112,7 +2322,14 @@ object RetroPack {
         (if (steady) "shader0 = \"${p.home}/${Crt3d.DIR}/${SteadyBeam.SLANG}\"" else "shader0 = \"${p.slang}/subframe-bfi/shaders/crt-beam-simulator.slang\"") +
             "\nfilter_linear0 = \"false\""
 
+    /**
+     * The beam at 120 Hz: half the light in each refresh, "~0.5 recommended for 120Hz" in the shader's own notes. At 0.5
+     * each picture is drawn whole in the first refresh and black in the second, as a tube lit each line once a sixtieth
+     * of a second; at the shader's own 0.7, the brightest pixels spilled into the second refresh and every pass after the
+     * beam was handed two different pictures a frame, which bent the tube's tone curve near white (2026-11-02).
+     */
     private fun beamSettings(lines: MutableList<String>) {
+        lines += "GAIN_VS_BLUR = \"0.5\""
         lines += "LCD_ANTI_RETENTION_TOGGLE = \"0.0\""       // not needed on an OLED panel
         lines += "SCAN_DIRECTION = \"0.0\""
     }
@@ -2127,16 +2344,25 @@ object RetroPack {
         (if (n64Parallel(look)) listOf("Mupen64Plus-Next") else emptyList()) + (if (look.compatible) emptyList() else listOf("Flycast"))
 
     /**
-     * A television console's chain: the beam, the signal (NTSC filter, unless RGB), then the tube. The signal only
-     * comes with a CRT: with the screen Off the picture is drawn clean.
+     * A television console's chain: the beam, the signal (NTSC filter, unless RGB), the set's colour ([Colour]), then
+     * the tube. The signal and colour only come with a CRT: with the screen Off the picture is drawn clean. GDV is
+     * Timeline's patched copy when it could be made ([Crt3d.slang]), told to average lines from 400 as the original did.
      */
-    fun tvPreset(look: Look, p: Paths, group: String = "arcade"): String? {
+    fun tvPreset(look: Look, p: Paths, group: String = "arcade", sms: Boolean = false): String? {
         val crt = crts[look.crt]
         val gdv = look.crt == "GDV Mini Ultra"
+        val ours = gdv && look.crt3dSlang
         val signal = look.signalOf(group)
+        val display = if (group == "arcade") Display.ARCADE else Display.TV
         val lines = ArrayList<String>()
         val params = ArrayList<String>()
         var n = 0
+        // The Genesis's measured colour levels ([GenesisDac]) first, while the core's exact levels can still be read back.
+        if (group == "genesis" && !sms && crt != null) {
+            lines += "shader$n = \"${p.home}/${Crt3d.DIR}/${GenesisDac.SLANG}\""; lines += "filter_linear$n = \"false\""
+            lines += "scale_type$n = \"source\""; lines += "scale$n = \"1.0\""
+            n++
+        }
         // The beam first, at the picture's own size. (After the NTSC filter it breaks the picture:
         // doubled, then dark with only its edges; first, as on the 3D consoles, it is right.)
         if (look.subframes) {
@@ -2144,12 +2370,15 @@ object RetroPack {
             lines += "scale_type$n = \"" + (if (crt != null) "source" else "viewport") + "\""; if (crt != null) lines += "scale$n = \"1.0\""
             n++
         }
-        if (crt != null && signal != "RGB") {
-            val (passes, ps) = ntscPasses(p, n, signal, pce = group == "tg16")
+        // The Atari's colour clock is its pixel clock, which no setting of guest's filter has: Stella's own filter,
+        // made for it, does its signal instead (stella in files()).
+        if (crt != null && signal != "RGB" && group != "atari2600") {
+            val (passes, ps) = ntscPasses(p, n, signal, pce = group == "tg16", extra = ntscTiming(group, sms))
             lines += passes; params += ps; n += 4
         }
         if (crt != null) {
-            lines += "shader$n = \"${p.slang}/${crt.file}\""
+            lines += colourPass(p, n, glsl = false); params += "tl_white = \"${whiteFor(look, display)}\""; n++
+            lines += "shader$n = \"" + (if (ours) "${p.home}/${Crt3d.DIR}/${Crt3d.SLANG}" else "${p.slang}/${crt.file}") + "\""
             lines += "filter_linear$n = \"${b(crt.linear)}\""
             if (crt.border) lines += "wrap_mode$n = \"clamp_to_border\""
             lines += "scale_type$n = \"viewport\""
@@ -2158,8 +2387,8 @@ object RetroPack {
         if (n == 0) return null
         if (look.subframes) beamSettings(params)
         if (gdv) {
-            params += "warpY = \"0.0\""                           // a flat screen, no curve
-            params += "sat = \"${satValue(look)}\""
+            params += gdvParams(look, glsl = false, display)     // flat (warpY 0), and as its screen showed it
+            if (ours) params += "gdv_hires = \"400.0\""
         }
         return (listOf("shaders = \"$n\"") + lines + params).joinToString("\n") + "\n"
     }
@@ -2190,17 +2419,29 @@ object RetroPack {
 
     private fun swanstation(look: Look, sharp: Boolean, four: Boolean = false, stem: String? = null) = swanBase(look, sharp, four) + psxFixes[stem].orEmpty()
 
+    /**
+     * PlayStation. The true picture is the console's own: 320 or so by 240, 15-bit colour with its 4 x 4 dither,
+     * textures that warp and corners that wobble (it kept vertices on whole pixels), all softened by the cable. The
+     * sharper look ([sharp]) draws at four times with 24-bit colour and PGXP, which straightens the wobble out.
+     * Both cores are told the same, so choosing the other one does not change the picture.
+     */
     private fun swanBase(look: Look, sharp: Boolean, four: Boolean) = mapOf(
         "swanstation_ControllerPorts_MultitapMode" to if (four) "Port1Only" else "Disabled",
         "swanstation_GPU_Renderer" to if (look.compatible) "Software" else "Auto",
         "swanstation_GPU_ResolutionScale" to if (sharp) "4" else "1",
         "swanstation_GPU_TrueColor" to sharp.toString(),
+        "swanstation_GPU_ScaledDithering" to "false",
         "swanstation_GPU_PGXPEnable" to sharp.toString(),
+        "swanstation_GPU_TextureFilter" to "Nearest",
         "swanstation_Display_ShowOSDMessages" to "false")      // the core's own notes ("PGXP culling disabled..."), not wanted either
     private fun beetlePsx(look: Look, sharp: Boolean, four: Boolean = false) = mapOf(
         "beetle_psx_hw_enable_multitap_port1" to if (four) "enabled" else "disabled",
         "beetle_psx_hw_renderer" to if (look.compatible) "software" else "hardware",
         "beetle_psx_hw_internal_resolution" to if (sharp && !look.compatible) "4x" else "1x(native)",
+        "beetle_psx_hw_depth" to if (sharp) "32bpp" else "16bpp(native)",
+        "beetle_psx_hw_dither_mode" to if (sharp) "disabled" else "1x(native)",
+        "beetle_psx_hw_pgxp_mode" to if (sharp) "memory only" else "disabled",
+        "beetle_psx_hw_filter" to "nearest",
         "beetle_psx_hw_display_osd" to "disabled")
     // With the face buttons turned by [n64Buttons] (A is the N64's A, B its B), these keep R2's C buttons where they sat
     // before: the right face button C-right, the bottom one C-down, the left one C-left, the top one C-up. The core's
@@ -2217,8 +2458,17 @@ object RetroPack {
     /** Nintendo 64's motion clarity: black frames between pictures, at 120 Hz, when the 3D consoles have any. */
     fun n64Frames(look: Look): Boolean = look.motion3d != "Off" && look.hz in 119..121
 
-    private fun mupen(sharp: Boolean, parallel: Boolean = false) = mapOf(
-        "mupen64plus-43screensize" to if (sharp) "1280x960" else "320x240",
+    /**
+     * Nintendo 64, drawn at four times ([detail], unless the game is run lighter) in both looks. The console's video chip
+     * smoothed every edge and resampled the picture; GLideN64 has none of that, so the true picture averages the four
+     * times back to 320 x 240 ([crt3dPreset]), the nearest thing to it. Textures use the console's own three-point
+     * filter ("3point is the original system specific way", the core's own note), and nothing the console lacked is added.
+     */
+    private fun mupen(detail: Boolean, parallel: Boolean = false) = mapOf(
+        "mupen64plus-43screensize" to if (detail) "1280x960" else "320x240",
+        "mupen64plus-BilinearMode" to "3point",
+        "mupen64plus-MultiSampling" to "0",
+        "mupen64plus-FXAA" to "0",
         "mupen64plus-rdp-plugin" to if (parallel) "parallel" else "gliden64",
         "mupen64plus-rsp-plugin" to if (parallel) "parallel" else "hle",
         "mupen64plus-r-cbutton" to "C3", "mupen64plus-d-cbutton" to "C2", "mupen64plus-l-cbutton" to "C1", "mupen64plus-u-cbutton" to "C4",
@@ -2241,9 +2491,15 @@ object RetroPack {
             append("input_player${player}_btn_y = \"8\"\n")     // Y: the core's A, a C button under R2 only
         }
     }
-    // Anisotropic filtering at 16: textures on floors and roads stay sharp into the distance, at no cost worth measuring on this chip.
-    private fun flycast(sharp: Boolean) = mapOf("reicast_internal_resolution" to if (sharp) "1280x960" else "640x480", "reicast_per_content_vmus" to "VMU A1",
-        "reicast_anisotropic_filtering" to "16")
+    /**
+     * Dreamcast. The true picture is its own 640 x 480 with plain texture filtering, as the console drew it; the sharper
+     * look draws at 1280 x 960 with anisotropic filtering at 16, which keeps far textures sharp. The console is told the
+     * cable chosen under Signal: VGA as through the VGA box (a game that refuses it falls back to composite by itself,
+     * the core's own rule), any other as a television cable.
+     */
+    private fun flycast(look: Look, sharp: Boolean) = mapOf("reicast_internal_resolution" to if (sharp) "1280x960" else "640x480", "reicast_per_content_vmus" to "VMU A1",
+        "reicast_anisotropic_filtering" to if (sharp) "16" else "off",
+        "reicast_cable_type" to if (look.signalOf("dreamcast") == "VGA") "VGA" else "TV (Composite)")
 
     /** Nintendo 64 games that need a frame copy GLideN64's own list gives them upstream but this core's copy does not. */
     val n64Fixes: Map<String, Map<String, String>> = mapOf(
@@ -2256,7 +2512,8 @@ object RetroPack {
         val turn = look.upright != "Keep it level"
         // MAME 2003-Plus, when chosen for arcade games, opens on its own notices (a copying disclaimer, "this game does not
         // work perfectly") that wait for a key: straight to the game instead.
-        out["MAME 2003-Plus/MAME 2003-Plus.opt"] = cfg(mapOf("mame2003-plus_skip_disclaimer" to "enabled", "mame2003-plus_skip_warnings" to "enabled"))
+        out["MAME 2003-Plus/MAME 2003-Plus.opt"] = cfg(mapOf("mame2003-plus_skip_disclaimer" to "enabled", "mame2003-plus_skip_warnings" to "enabled",
+            "mame2003-plus_tate_mode" to if (turn) "enabled" else "disabled"))
         out["FinalBurn Neo/FinalBurn Neo.opt"] = cfg(mapOf("fbneo-vertical-mode" to when (look.upright) {
             "Right side down" -> "TATE alternate"
             "Left side down" -> "TATE"
@@ -2265,7 +2522,7 @@ object RetroPack {
         if (turn) for (set in arcade) if (set.lowercase() in uprightSets)
             out["remaps/FinalBurn Neo/$set.rmp"] = turned(look.upright == "Right side down")
         look.speakers?.let { out["speakers.dsp"] = Eq.dsp(it) }
-        // Lag reduction , for the cartridge consoles and handhelds only: cheap there, costly on 3D cores.
+        // Lag reduction, for the cartridge consoles and handhelds only: cheap there, costly on 3D cores.
         // Preemptive frames re-runs the last frame only when a button changes, so the game answers a frame sooner (a
         // sixtieth of a second) at a fraction of run-ahead's cost; a core that cannot do it says so and is left as it was.
         val old = linkedMapOf("rewind_enable" to b(look.rewind), "run_ahead_enabled" to b(look.lag == "Run-ahead"),
@@ -2273,7 +2530,7 @@ object RetroPack {
         val motion = linkedMapOf(
             "video_shader_subframes" to if (look.subframes) "2" else "1",
             "video_black_frame_insertion" to if (look.blackFrames) "1" else "0",
-       )
+        )
         for ((core, systems) in tv) {
             val lagHere = if (core in noLag) old + lagOff else old
             out["$core/$core.cfg"] = cfg(motion + lagHere + quickSound + mapOf("video_smooth" to "false"))
@@ -2285,13 +2542,25 @@ object RetroPack {
         if (look.subframes || look.blackFrames) for (set in arcade) if (set.lowercase() in offPaceSets)
             out["FinalBurn Neo/$set.cfg"] = cfg(mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0"))
         val lcd = lcds[look.handheld]?.let { "#reference \"${p.slang}/$it\"\n" }
+        val trueLcd = look.handheld == TRUE_LCD
         for (core in handhelds.keys) {
             out["$core/$core.cfg"] = cfg(old + quickSound + mapOf("video_smooth" to "false", "video_scale_integer" to "true"))
-            val sheet = if (core == "Gambatte" && look.transparency) transparent[look.handheld]?.let { "#reference \"${p.slang}/$it\"\n" } else lcd
+            val sheet = when {
+                trueLcd -> if (core == "mGBA") gbaScreen(p) else gbcScreen(p)
+                core == "Gambatte" && look.transparency -> transparent[look.handheld]?.let { "#reference \"${p.slang}/$it\"\n" }
+                else -> lcd
+            }
             if (sheet != null) out["$core/$core.slangp"] = sheet
         }
+        // Game Boy and Game Boy Color in Gambatte, each in a folder file of its own (a folder's file stands in place of the
+        // core's, so each carries every key): the original Game Boy's grey levels for the green dot-matrix screen, and the
+        // Color's own colour, corrected as its washed-out reflective screen showed it.
+        out["Gambatte/Gambatte.opt"] = cfg(gambatte(look, gbc = true))
+        out["Gambatte/gbc.opt"] = cfg(gambatte(look, gbc = true))
+        out["Gambatte/gb.opt"] = cfg(gambatte(look, gbc = false))
+        if (trueLcd) out["Gambatte/gb.slangp"] = gbScreen(p)
         // A Game Boy or Game Boy Color game moved to mGBA (Settings, Emulators) keeps the unlit screen too.
-        if (look.transparency) transparent[look.handheld]?.let { t ->
+        if (look.transparency && !trueLcd) transparent[look.handheld]?.let { t ->
             for (system in listOf("gb", "gbc")) out["mGBA/$system.slangp"] = "#reference \"${p.slang}/$t\"\n"
         }
         // Per system, in a file named after its folder: what the two extra buttons do there.
@@ -2300,25 +2569,38 @@ object RetroPack {
             val keys = Hotkeys.binds(look.m1, look.m2, look.extras[system] ?: Hotkeys.usual(system))
             if (keys.isNotEmpty()) folder["$core/$system.cfg"] = keys
         }
-        // Game Gear shares a core with the Genesis but is a handheld: its folder gets the handheld treatment. Square
-        // pixels: 160 x 144 is then exactly six times on this panel both ways (960 x 864), so the LCD grid falls evenly;
-        // at the core's 4:3 each pixel was 7.2 panel pixels wide and the grid uneven.
-        folder["Genesis Plus GX/gamegear.cfg"] = mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0", "video_scale_integer" to "true",
-            "aspect_ratio_index" to SQUARE) + Hotkeys.binds(look.m1, look.m2, look.extras["gamegear"] ?: Hotkeys.usual("gamegear"))
-        // Master System: square pixels too. 256 x 192 is then exactly five times this panel, 1280 x 960, the whole
-        // screen; at the core's wider TV shape (1.52) five times would not fit across and it fell back to four, with
-        // bands above and below.
-        folder["Genesis Plus GX/mastersystem.cfg"] = mapOf("aspect_ratio_index" to SQUARE) + (folder["Genesis Plus GX/mastersystem.cfg"] ?: emptyMap())
+        // Game Gear shares a core with the Genesis but is a handheld: its folder gets the handheld treatment. Its screen
+        // was a 4:3 window, 65.27 by 48.90 mm in Sega's service manual, so its 160 x 144 pixels were a fifth wider than
+        // tall (6:5). On a 4:3 screen of at least 960 x 720 that is exactly 6 x 5 screen pixels each, or a whole multiple
+        // of it ([gameGearSize]), centered by RetroArch itself (with whole-number scaling on, it centers a custom size and
+        // adds the x and y to that, so they are 0). Square pixels drew it 17% too narrow. Any other screen, and a
+        // television, takes the core's shape at whole steps both ways instead (7 x 6 each on 1080 lines, 3% narrow).
+        folder["Genesis Plus GX/gamegear.cfg"] = mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0", "video_scale_integer" to "true") +
+            (gameGearSize(look)?.let { (w, h) -> mapOf("aspect_ratio_index" to CUSTOM, "video_scale_integer_axis" to "0", "custom_viewport_width" to "$w",
+                "custom_viewport_height" to "$h", "custom_viewport_x" to "0", "custom_viewport_y" to "0") }
+                ?: mapOf("aspect_ratio_index" to CORE, "video_scale_integer_axis" to "1")) +
+            Hotkeys.binds(look.m1, look.m2, look.extras["gamegear"] ?: Hotkeys.usual("gamegear"))
+        // Master System: the shape the core reports, its pixels as wide as the NES's (8:7), with the border colour a
+        // television showed above and below its 192 lines (genesisOpt): 1172 x 960, four panel rows a line like every
+        // other television console. Square pixels, used before, drew it 14% too tall and lost the border. Written out, so
+        // the square-pixel setting an earlier version put in this file does not stay behind.
+        folder["Genesis Plus GX/mastersystem.cfg"] = mapOf("aspect_ratio_index" to CORE) + (folder["Genesis Plus GX/mastersystem.cfg"] ?: emptyMap())
         for ((path, keys) in folder) out[path] = cfg(keys)
-        // With the handhelds' grid Off, a plain pass of its own: without one the Game Gear falls back to the Genesis's
-        // CRT preset, the core it shares.
-        out["Genesis Plus GX/gamegear.slangp"] = lcd ?: "shaders = 1\nshader0 = \"${p.slang}/stock.slang\"\nfilter_linear0 = false\nscale_type0 = viewport\n"
+        out["Genesis Plus GX/gamegear.slangp"] = when {
+            trueLcd -> "#reference \"${p.slang}/handheld/lcd-grid-v2.slangp\"\n"
+            lcd != null -> lcd
+            // With the handhelds' grid Off, a plain pass of its own: without one the Game Gear falls back to the Genesis's
+            // CRT preset, the core it shares.
+            else -> "shaders = 1\nshader0 = \"${p.slang}/stock.slang\"\nfilter_linear0 = false\nscale_type0 = viewport\n"
+        }
+        // The Master System's own chain: its signal timed as its own (ntscTiming), and none of the Genesis's colour levels.
+        tvPreset(look, p, "genesis", sms = true)?.let { out["Genesis Plus GX/mastersystem.slangp"] = it }
         // The first 3D consoles: smoothed when drawn plain, and 240 lines is exactly a quarter of this panel.
         val beamed = beam3d(look)
         fun motion3d(core: String) = linkedMapOf(
             "video_shader_subframes" to if (look.subframes3d && core in beamed) "2" else "1",
             "video_black_frame_insertion" to if (look.blackFrames3d && core in beamed) "1" else "0",
-       )
+        )
         for (core in threeD.keys) out["$core/$core.cfg"] = cfg(mapOf("video_smooth" to "true") + motion3d(core))
         // 50 Hz games skip it, as on the television consoles.
         if (look.subframes3d || look.blackFrames3d) for ((core, systems) in threeD) if (core in beamed)
@@ -2327,14 +2609,15 @@ object RetroPack {
         // Without the CRT look, the beam alone.
         if (look.subframes3d && !(look.crt3d && look.crt3dSlang)) for (core in beamed)
             out["$core/$core.slangp"] = "shaders = \"1\"\n" + beamPass(p, core == "Flycast") + "\nscale_type0 = \"viewport\"\n" +
-                (if (core == "Flycast") "" else "LCD_ANTI_RETENTION_TOGGLE = \"0.0\"\nSCAN_DIRECTION = \"0.0\"\n")
+                "GAIN_VS_BLUR = \"0.5\"\n" + (if (core == "Flycast") "" else "LCD_ANTI_RETENTION_TOGGLE = \"0.0\"\nSCAN_DIRECTION = \"0.0\"\n")
         // With the CRT look, the same GDV as the television consoles, after the picture is brought back to the console's
         // own lines: four times the detail is four rows to a line (two halvings), Dreamcast's 960 is twice its 480 (one);
-        // drawn in software or run lighter it is already the console's own (none). Nintendo 64, and Dreamcast drawn the
+        // drawn at the console's own resolution (the true picture), in software or run lighter, there is nothing to bring
+        // down (none). Nintendo 64 is drawn at four times in both looks, so it always has two. Nintendo 64, and Dreamcast drawn the
         // compatible way, run under OpenGL and take the GLSL one (RetroArch picks the preset its driver can use).
         if (look.crt3d) {
             val psx = if (look.sharp && !look.compatible) 2 else 0
-            val n64 = if (look.sharp) 2 else 0
+            val n64 = 2
             val dc = if (look.sharp) 1 else 0
             if (look.crt3dSlang) {
                 out["SwanStation/SwanStation.slangp"] = crt3dPreset(look, p, psx, glsl = false, beam = true, group = "psx")
@@ -2345,9 +2628,11 @@ object RetroPack {
             }
             out["Flycast/Flycast.glslp"] = crt3dPreset(look, p, dc, glsl = true, group = "dreamcast")
             out["Mupen64Plus-Next/Mupen64Plus-Next.glslp"] = crt3dPreset(look, p, n64, glsl = true, group = "n64")
-            // A game run lighter is drawn at its console's own lines: its own preset, with nothing to bring down.
+            // A game run lighter is drawn at its console's own lines: its own preset, with nothing to bring down. In the
+            // true picture only Nintendo 64 has anything to make lighter.
             for ((key, light) in look.lighter) {
-                if (!light || !look.sharp) continue
+                if (!light) continue
+                if (!look.sharp && key.substringBefore('/') != "n64") continue
                 val stem = key.substringAfter('/')
                 when (key.substringBefore('/')) {
                     "psx" -> if (look.crt3dSlang && psx > 0) {
@@ -2377,11 +2662,11 @@ object RetroPack {
         // OpenGL renderer wants desktop OpenGL, which Android does not have.)
         out["SwanStation/SwanStation.opt"] = cfg(swanstation(look, look.sharp))
         out["Beetle PSX HW/Beetle PSX HW.opt"] = cfg(beetlePsx(look, look.sharp))
-        out["Mupen64Plus-Next/Mupen64Plus-Next.opt"] = cfg(mupen(look.sharp, n64Parallel(look)))
+        out["Mupen64Plus-Next/Mupen64Plus-Next.opt"] = cfg(mupen(true, n64Parallel(look)))
         out["remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp"] = n64Buttons()
         // Dreamcast: a memory card of its own for every game, kept with the other saves. The core's usual way is one
         // card shared by all of them, in the system folder where the backup does not look, and 200 blocks fill up fast.
-        out["Flycast/Flycast.opt"] = cfg(flycast(look.sharp))
+        out["Flycast/Flycast.opt"] = cfg(flycast(look, look.sharp))
         // "Run lighter", per game: the console's own resolution for that one game. A game's own file takes the place of
         // the core's, so it carries every setting the core's does; one that was lighter and no longer is gets the usual
         // settings back in its own file, rather than keeping a lighter one nobody asked for any more.
@@ -2391,8 +2676,8 @@ object RetroPack {
             val sharp = look.sharp && !light
             when (system) {
                 "psx" -> { out["SwanStation/$stem.opt"] = cfg(swanstation(look, sharp, stem in multitap, stem)); out["Beetle PSX HW/$stem.opt"] = cfg(beetlePsx(look, sharp, stem in multitap)) }
-                "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(sharp, n64Parallel(look)) + n64Fixes[stem].orEmpty())
-                "dreamcast" -> out["Flycast/$stem.opt"] = cfg(flycast(sharp))
+                "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(!light, n64Parallel(look)) + n64Fixes[stem].orEmpty())
+                "dreamcast" -> out["Flycast/$stem.opt"] = cfg(flycast(look, sharp))
             }
         }
         // Four players: a game's own file with the multitap in, carrying every other setting the core's does.
@@ -2400,13 +2685,22 @@ object RetroPack {
             out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, four = true, stem = stem))
             out["Beetle PSX HW/$stem.opt"] = cfg(beetlePsx(look, look.sharp, four = true))
         }
-        for ((stem, fix) in n64Fixes) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(look.sharp, n64Parallel(look)) + fix)
+        for ((stem, fix) in n64Fixes) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + fix)
         // The games that need PGXP on the processor: a file of their own, carrying every other setting the core's does.
         for (stem in psxFixes.keys) if ("psx/$stem" !in look.lighter && stem !in multitap) {
             out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, stem = stem))
         }
+        // Saturn's interlaced hi-res games (Virtua Fighter 2's 704 x 480): each field drawn on its own lines, as a television
+        // drew them, instead of the core's usual weave, which shows both at once and combs anything that moves.
+        out["Beetle Saturn/Beetle Saturn.opt"] = cfg(mapOf("beetle_saturn_deinterlacer" to "bob_offset"))
         // Sega CD: the console's 8 KB of backup memory, which a few role-playing games fill between them, becomes 8 KB for each game.
-        out["Genesis Plus GX/Genesis Plus GX.opt"] = cfg(mapOf("genesis_plus_gx_system_bram" to "per game"))
+        out["Genesis Plus GX/Genesis Plus GX.opt"] = cfg(genesisOpt(borders = false))
+        // The television consoles show the border colour a set showed above and below the picture, 240 lines in all, each
+        // in a folder file (one core option serves all four, and the Game Gear must not have it).
+        for (system in listOf("genesis", "segacd", "mastersystem")) out["Genesis Plus GX/$system.opt"] = cfg(genesisOpt(borders = true))
+        // The Game Gear's backlit colour screen was slow: a pixel going dark kept 80% of its light each frame (the core's
+        // own model of it), which some games' flicker relied on.
+        out["Genesis Plus GX/gamegear.opt"] = cfg(genesisOpt(borders = false) + mapOf("genesis_plus_gx_lcd_filter" to "enabled", "genesis_plus_gx_gg_extra" to "disabled"))
         // Nintendo DS: two screens on a single one. R2 steps through the arrangements, in this order: the top screen
         // large with the touch screen small beside it, the reverse, the top screen alone (exactly five times its size on
         // this panel), the touch screen alone, and both stacked. Whole-number scaling is off so each one fills the
@@ -2429,18 +2723,27 @@ object RetroPack {
             "melonds_start_time_mode" to "sync"))
         // Not one of the 8 and 16-bit systems lag reduction is for: a DS state is several megabytes to copy every frame.
         out["melonDS DS/melonDS DS.cfg"] = cfg(old + lagOff + mapOf("video_scale_integer" to "false", "video_smooth" to "false"))
-        out["melonDS DS/melonDS DS.slangp"] = "#reference \"${p.slang}/pixel-art-scaling/pixel_aa.slangp\"\n"
+        out["melonDS DS/melonDS DS.slangp"] = dsScreen(p)
         // NES: the core's composite-video filter stays off. The CRT shader is the television here; both at once blur
         // the picture twice and widen it to 602 columns. (It was found switched on in a test device's stored options.)
-        out["Nestopia/Nestopia.opt"] = cfg(mapOf("nestopia_blargg_ntsc_filter" to "disabled"))
-        out["Gambatte/Gambatte.opt"] = cfg(mapOf(
-            "gambatte_gb_colorization" to "internal", "gambatte_gb_internal_palette" to "Special 1",
-            "gambatte_mix_frames" to "mix", "gambatte_gbc_color_correction" to "GBC only"))
-        out["mGBA/mGBA.opt"] = cfg(mapOf("mgba_interframe_blending" to "mix"))
+        // Its palette is set too: Sony's CXA2025AS decoder in its American setting, the colour an American television made
+        // of the NES's signal. The core's own default changed (to "royaltea", 2026-08-29), so left alone the colours would
+        // depend on when the core was built. Its pixels at their own 8:7 shape, and the 8 lines top and bottom a set hid.
+        out["Nestopia/Nestopia.opt"] = cfg(mapOf("nestopia_blargg_ntsc_filter" to "disabled", "nestopia_palette" to "cxa2025as", "nestopia_aspect" to "auto"))
+        // SNES pixels at their own 8:7 shape: the core's usual 4:3 drew them 2% too wide.
+        out["Snes9x/Snes9x.opt"] = cfg(mapOf("snes9x_aspect" to "ntsc"))
+        // TurboGrafx: the colours its composite output decoded to, measured for the core; RGB keeps the chip's own.
+        out["Beetle PCE/Beetle PCE.opt"] = cfg(mapOf("pce_palette" to if (look.signalOf("tg16") == "RGB") "RGB" else "Composite"))
+        // Atari 2600: Stella's own television filter, made for the console, for its signal; and no blending of games that
+        // flicker objects at 30 a second, which flickered on a tube too (its phosphors faded in a few milliseconds).
+        out["Stella/Stella.opt"] = cfg(mapOf("stella_filter" to when (look.signalOf("atari2600")) { "RGB" -> "disabled"; "S-video" -> "s-video"; else -> "composite" },
+            "stella_phosphor" to "off"))
+        // The Game Boy Advance's colour is done by its screen's shader (gbaScreen), not the core, so the core's is off.
+        out["mGBA/mGBA.opt"] = cfg(mapOf("mgba_interframe_blending" to "mix", "mgba_color_correction" to "OFF"))
         // Boktai's cartridge had a sunlight sensor, and without any sun the game cannot be played. It starts at half
         // sun; R3 and L3 turn it up and down while playing. (A file named after a game holds that game's core options
         // in place of the core's own, so the core's are repeated in it.)
-        for (boktai in RetroPack.solar) out["mGBA/$boktai.opt"] = cfg(mapOf("mgba_interframe_blending" to "mix", "mgba_solar_sensor_level" to "5"))
+        for (boktai in RetroPack.solar) out["mGBA/$boktai.opt"] = cfg(mapOf("mgba_interframe_blending" to "mix", "mgba_color_correction" to "OFF", "mgba_solar_sensor_level" to "5"))
         return out
     }
 

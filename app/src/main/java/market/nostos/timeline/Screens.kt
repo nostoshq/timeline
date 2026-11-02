@@ -1192,17 +1192,21 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                     "way the beam cannot follow. Games that run at 30 or 20 frames a second show a faint double image in " +
                     "motion, as they did on a tube. 50 Hz games skip it."),
             app.choice("Handhelds: screen", "ra.handheld", RetroPack.handheldChoices,
-                "The LCD look for Game Boy, Game Boy Color, Game Boy Advance and Game Gear, at a whole-number size."),
+                "As the console: each screen as it was. The Game Boy's green dots of ink over their reflector, with its smear; the Game Boy Color's " +
+                    "washed-out colors and pixel shape; the Game Boy Advance's dark, unlit screen; the Game Gear's slow backlit one at its own wider shape. " +
+                    "LCD3x and LCD grid are plain grids over the game's colors."),
             app.toggle("Game Boy: pixel transparency", "ra.transparency", true,
-                "The Game Boy and Game Boy Color had no backlight: white and pale pixels let the screen show through. This draws them that way, with a faint shadow under the picture, over the screen chosen above."),
+                "With LCD3x or LCD grid: the Game Boy and Game Boy Color had no backlight, so white and pale pixels let the screen show through. " +
+                    "This draws them that way, with a faint shadow under the picture. As the console draws it already."),
             app.choice("Upright arcade games", "ra.upright", RetroPack.uprightChoices,
                 "Pac-Man, Galaga, 1943, DoDonPachi and the other games made for a screen stood on end fill the panel when you turn the device. " +
                     "The picture, both sticks, the d-pad and the face buttons all turn with it, for those games only. If it comes up upside down, pick the other side."),
             app.toggle("Whole-number scaling", "ra.integer", true,
                 "Every game pixel becomes the same number of screen pixels. 240-line consoles fill this panel exactly at four times."),
-            app.toggle("3D consoles: four times the detail", "ra.sharp", true,
-                "PlayStation, Nintendo 64 and Dreamcast are drawn at this panel's full 960 lines instead of their own 240 or 480: the same games with clean edges, " +
-                    "and PlayStation without its wobble. Off shows each exactly as the console drew it."),
+            app.toggle("3D consoles: sharper than the console", "ra.sharp", false,
+                "Off is the true picture: PlayStation and Dreamcast at their own resolution, PlayStation with its dithering and wobble, and 480-line " +
+                    "pictures without gaps between their lines, as a television showed them. On draws PlayStation and Dreamcast at 960 lines with " +
+                    "clean edges and no wobble, keeps Nintendo 64's extra detail across, and draws lines on 480-line pictures, like a monitor."),
             app.toggle("3D consoles: CRT look", "ra.crt3d", true,
                 "PlayStation, Saturn, Nintendo 64, Dreamcast, GameCube and Wii through the same CRT as the television consoles, with scanlines at each " +
                     "console's own number of lines and the extra detail kept in them. Off draws them clean."),
@@ -1216,8 +1220,11 @@ private fun menu(app: AppState, id: String): MenuDef = when {
             app.toggle("GameCube and Wii: controls set by the launcher", "dol.pad", true,
                 "This device's buttons and sticks are mapped inside Dolphin before each game: a GameCube pad, and a Wii Remote with Nunchuk (left stick moves, " +
                     "right stick points, R1 shakes). Off leaves the controls to whatever you map in Dolphin yourself."),
-            Item("Color boost", "${app.prefs.int("ra.saturation", 110)}%", "Lifts color under the GDV screen to offset its dimming. 110 is the default.", onStep = { d ->
-                app.prefs.put("ra.saturation", (app.prefs.int("ra.saturation", 110) + d * 5).coerceIn(100, 130))
+            app.choice("Television white", "ra.white", RetroPack.whiteChoices,
+                "The white the television showed. American sets were sold bluer than the broadcast standard, about 8000 K on average; " +
+                    "Japanese sets, the ones these games were made on, ran at 9300 K. 6500 K is the studio standard. Arcade monitors and the Dreamcast's VGA monitor keep their own 9300 K."),
+            Item("Color boost", "${app.prefs.int("ra.saturation", 100)}%", "100 is each console's own color. More lifts it under the GDV screen, past what a television showed.", onStep = { d ->
+                app.prefs.put("ra.saturation", (app.prefs.int("ra.saturation", 100) + d * 5).coerceIn(100, 130))
                 app.touchSettings()
             }),
             app.toggle("Rewind on 8 and 16-bit", "ra.rewind", false, "Hold the rewind hotkey to run a game backwards. Costs a little speed and memory."),
@@ -1236,16 +1243,18 @@ private fun menu(app: AppState, id: String): MenuDef = when {
         fun signal(group: String, label: String, note: String) =
             app.choice(label, "ra.signal.$group", RetroPack.signals.getValue(group), note)
         MenuDef(settings("Picture", "Signal"), listOf(
-            signal("nes", "NES", "The NES came with RF and composite only. Composite: soft color fringes and the shimmer of dot crawl."),
-            signal("snes", "SNES", "S-video: sharp, with softer color. Its hi-res see-through effects, as in Kirby's Dream Land 3, blend as they did."),
-            signal("genesis", "Genesis, Sega CD and Master System", "Composite turns the Genesis's dithered stripes into the see-through water and shadows its artists drew for, as in Sonic's waterfalls."),
-            signal("tg16", "TurboGrafx-16", "The American TurboGrafx had RF only; composite is the nearest clean version of it."),
+            signal("nes", "NES", "The NES came with RF and composite only. Composite: soft color fringes and the shimmer of dot crawl. RF is the switch box in the carton, with its noise."),
+            signal("snes", "SNES", "Composite, as most American homes had it: its hi-res see-through effects, as in Kirby's Dream Land 3, blend as they did. S-video needed a cable and a set few had."),
+            signal("genesis", "Genesis, Sega CD and Master System", "Composite turns the Genesis's dithered stripes into the see-through water and shadows its artists drew for, with the rainbow in Sonic's waterfalls."),
+            signal("tg16", "TurboGrafx-16", "The American TurboGrafx had RF only, offered as it was; composite is the nearest clean version of it."),
             signal("atari2600", "Atari 2600", "RF only on the console; composite is the nearest clean version of it."),
-            signal("arcade", "Arcade", "Arcade monitors took RGB straight from the board: sharp and clean."),
-            signal("psx", "PlayStation", "S-video: the color a little soft and the picture otherwise sharp. Composite also blends its dithering."),
-            signal("n64", "Nintendo 64", "S-video, as the best American hookup of the day. Composite is softer still."),
+            signal("arcade", "Arcade", "Arcade monitors took RGB straight from the board: sharp and clean, and seen close enough that their mask shows."),
+            signal("psx", "PlayStation", "Composite, the cable in the box: its dithering blends into the smooth shading the games were drawn for. S-video and RGB are sharper and show the dither."),
+            signal("n64", "Nintendo 64", "S-video, the best an American Nintendo 64 could do (it had no RGB). Composite, the cable in the box, is softer."),
             signal("saturn", "Saturn", "Composite: its mesh see-through effects, made of dots, blend into the transparency they were made for."),
-            signal("dreamcast", "Dreamcast", "RGB, as through the VGA box: crisp. S-video and composite as on a television."),
+            signal("dreamcast", "Dreamcast", "VGA, the VGA box on a monitor: 480 crisp progressive lines, and the console is told the box is in (a game that refuses it falls back to composite by itself). S-video and composite as on a television."),
+            signal("gcwii", "GameCube and Wii", "Component, the best cable they had: 480 progressive lines where the game offers them, on an HD CRT of the day, whose beam was made for 1080 lines: fine distinct scanlines. S-video and composite send them interlaced, with the games' own blending against flicker."),
+            signal("ps2", "PlayStation 2", "Component, the best cable it had, on an HD CRT of the day: fine distinct scanlines. S-video and composite, the cable in the box, are softer."),
        ))
     }
     id == "battery" -> {

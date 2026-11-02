@@ -53,20 +53,24 @@ When a game you own came out on today's date, the home screen says so: *31 years
   <img src="docs/media/signals.png" alt="A detail of one frame through composite, S-video and RGB under the same CRT: rainbow fringes on composite, a softer picture on S-video, sharp edges on RGB" width="880">
 </p>
 
-Every console is drawn through two things: the cable it reached a television by, and the tube at the other end.
-The Genesis gets composite, which blends its dithered stripes into the transparency its artists drew for, and the NES
-gets it too. The Super Nintendo gets the softer color of S-video, arcade games the sharp RGB of a cabinet monitor.
-Each is a single choice in Settings, Picture, Signal, and you can change any of them.
+Every console is drawn the way it looked on the screen it was played on in an American home: through the cable it
+came with, a television's color and white, and the tube at the other end. The Genesis gets composite, which blends
+its dithered stripes into the transparency its artists drew for, with the still rainbow of its waterfalls; the NES and
+Super Nintendo get composite timed to their own signal; arcade games get the sharp RGB of a cabinet monitor. Each is
+a single choice in Settings, Picture, Signal, and you can change any of them.
 
-- **Five CRT looks** from RetroArch's shader collection, GDV Mini Ultra first, all light enough for most handhelds.
-- **The beam simulator.** On 120 Hz screens, Blur Busters' CRT beam simulator flashes each picture the way a tube's
-  phosphors did, so moving scenes stay sharp instead of smearing. Black frames are there as the plainer choice.
-- **The 3D consoles.** PlayStation and Nintendo 64 are drawn at four times their detail and the Dreamcast at twice,
-  then brought back to the console's own lines before the CRT, so you get clean edges and real scanlines at once.
-  The Saturn is drawn at its own.
-- **GameCube and Wii** get a 480-line look and an aperture grille written for Dolphin.
-- **Game Boy, Game Boy Color and Game Boy Advance** get the grid of their LCDs, and the Game Boy and Game Boy Color's
-  unlit screens show through their pale pixels the way they did.
+- **The tube** is GDV Mini Ultra from RetroArch's shader collection, set as a television showed it: the tube's own
+  gamma, scanlines centered on their lines, bright lines blooming into the gaps, nothing clipped. Four other looks are
+  there to choose.
+- **Each console's own shape and color**: the Master System with its border, the Game Gear's wider pixels, the
+  Genesis's measured color levels, and an American set's bluer white.
+- **The beam simulator.** On 120 Hz screens, Blur Busters' CRT beam simulator lights each picture for half the time,
+  the way a tube did, so moving scenes stay sharp instead of smearing. Black frames are there as the plainer choice.
+- **The 3D consoles** at their own resolution, with the PlayStation's dithering and wobble, and the 480-line consoles
+  without gaps between their lines, as an interlaced picture looked. A sharper look is one switch away.
+- **GameCube, Wii and PlayStation 2** get a 480-line television written for Dolphin and ARMSX2.
+- **Game Boy, Game Boy Color, Game Boy Advance, Game Gear and DS** look as their screens did: the Game Boy's green dot
+  matrix and smear, the Color's washed-out color, the Advance's darker unlit screen.
 
 [More on the picture, console by console](docs/picture.md).
 
@@ -107,7 +111,7 @@ corrects the speakers, and on the firmware it was measured on, it offers a measu
 
 ## Getting started
 
-1. **Download** `Timeline-1.0.0.apk` from [Releases](../../releases/latest) and open it on your handheld. Android
+1. **Download** `Timeline-1.1.0.apk` from [Releases](../../releases/latest) and open it on your handheld. Android
    asks whether your browser or file manager may install apps; allow it. You can switch that off again afterward.
 2. **Open Timeline.** It asks for access to your files, so it can find your games, then offers to be your home
    screen. You can say no and open it like any other app.

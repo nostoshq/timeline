@@ -518,27 +518,43 @@ class RetroPackTest {
         assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("1280x960"))
     }
 
-    @Test fun theDefaultLookIsTheNovaSetup() {
+    @Test fun theDefaultLookIsTheTruePicture() {
         val files = RetroPack.files(Look(), p)
-        val preset = files.getValue("FinalBurn Neo/FinalBurn Neo.slangp")      // arcade: RGB, so the beam and the tube alone
-        assertTrue(preset.startsWith("shaders = \"2\"\n"))
+        val preset = files.getValue("FinalBurn Neo/FinalBurn Neo.slangp")      // arcade: RGB, so the beam, the set's colour and the tube
+        assertTrue(preset.startsWith("shaders = \"3\"\n"))
         assertTrue(preset.contains("shader0 = \"/storage/emulated/0/Timeline/retroarch/shaders/shaders_slang/subframe-bfi/shaders/crt-beam-simulator.slang\""))
-        assertTrue(preset.contains("shader1 = \"/storage/emulated/0/Timeline/retroarch/shaders/shaders_slang/crt/shaders/crt-gdv-mini-ultra.slang\""))
-        for (line in listOf("wrap_mode1 = \"clamp_to_border\"", "scale_type1 = \"viewport\"", "LCD_ANTI_RETENTION_TOGGLE = \"0.0\"",
-            "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "sat = \"1.10\"")) assertTrue(line, preset.contains(line))
+        assertTrue(preset.contains("shader1 = \"/storage/emulated/0/Timeline/retroarch/shaders/timeline/timeline-colour.slang\""))
+        assertTrue(preset.contains("shader2 = \"/storage/emulated/0/Timeline/retroarch/shaders/timeline/crt-gdv-3d.slang\""))
+        for (line in listOf("wrap_mode2 = \"clamp_to_border\"", "scale_type2 = \"viewport\"", "LCD_ANTI_RETENTION_TOGGLE = \"0.0\"", "GAIN_VS_BLUR = \"0.5\"",
+            "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "sat = \"1.00\"", "glow = \"0.00\"", "gdv_hires = \"400.0\"")) assertTrue(line, preset.contains(line))
         assertTrue(files.getValue("Snes9x/Snes9x.cfg").contains("video_shader_subframes = \"2\""))
-        assertTrue(files.getValue("Gambatte/Gambatte.slangp").contains("pixel_transparency-lcd3x.slangp"))   // LCD3x, with the unlit screen
-        assertTrue(files.getValue("mGBA/mGBA.slangp").contains("handheld/lcd3x.slangp"))
-        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_internal_resolution = \"1280x960\""))
-        assertTrue(files.getValue("SwanStation/SwanStation.opt").contains("swanstation_GPU_ResolutionScale = \"4\""))
-        assertTrue(files.getValue("SwanStation/SwanStation.opt").contains("swanstation_GPU_PGXPEnable = \"true\""))
-        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("mupen64plus-43screensize = \"1280x960\""))
-        val plain = RetroPack.files(Look(sharp = false), p)
-        assertTrue(plain.getValue("SwanStation/SwanStation.opt").contains("swanstation_GPU_ResolutionScale = \"1\""))
-        assertTrue(plain.getValue("SwanStation/SwanStation.opt").contains("swanstation_GPU_PGXPEnable = \"false\""))
-        assertTrue(plain.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("mupen64plus-43screensize = \"320x240\""))
-        assertTrue(plain.getValue("Flycast/Flycast.opt").contains("reicast_internal_resolution = \"640x480\""))
-        assertTrue(plain.getValue("Beetle PSX HW/Beetle PSX HW.opt").contains("beetle_psx_hw_internal_resolution = \"1x(native)\""))
+        // the handhelds as their own screens were
+        assertTrue(files.getValue("Gambatte/gb.slangp").let { it.contains("handheld/gameboy.slangp") && it.contains("integer_mode = \"1.000000\"") })
+        assertTrue(files.getValue("Gambatte/gb.opt").contains("gambatte_gb_colorization = \"disabled\""))
+        assertTrue(files.getValue("Gambatte/Gambatte.slangp").contains("authentic_gbc_fast.slang"))
+        assertTrue(files.getValue("Gambatte/gbc.opt").contains("gambatte_gbc_color_correction_mode = \"accurate\""))
+        assertTrue(files.getValue("mGBA/mGBA.slangp").contains("lcd-grid-v2-gba-color.slangp") && files.getValue("mGBA/mGBA.opt").contains("mgba_color_correction = \"OFF\""))
+        assertTrue(files.getValue("melonDS DS/melonDS DS.slangp").let { it.contains("nds-color.slang") && it.contains("pixel_aa.slang") })
+        // the 3D consoles at their own detail, with the console's own dither and wobble
+        val swan = files.getValue("SwanStation/SwanStation.opt")
+        assertTrue(swan.contains("swanstation_GPU_ResolutionScale = \"1\"") && swan.contains("swanstation_GPU_PGXPEnable = \"false\"") && swan.contains("swanstation_GPU_TrueColor = \"false\""))
+        val beetle = files.getValue("Beetle PSX HW/Beetle PSX HW.opt")
+        assertTrue(beetle.contains("beetle_psx_hw_internal_resolution = \"1x(native)\"") && beetle.contains("beetle_psx_hw_dither_mode = \"1x(native)\""))
+        assertTrue(files.getValue("Flycast/Flycast.opt").let { it.contains("reicast_internal_resolution = \"640x480\"") && it.contains("reicast_anisotropic_filtering = \"off\"") })
+        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").let { it.contains("mupen64plus-43screensize = \"1280x960\"") && it.contains("mupen64plus-BilinearMode = \"3point\"") })
+        assertTrue(files.getValue("Beetle Saturn/Beetle Saturn.opt").contains("beetle_saturn_deinterlacer = \"bob_offset\""))
+        // the sharper look: as before
+        val sharp = RetroPack.files(Look(sharp = true), p)
+        assertTrue(sharp.getValue("SwanStation/SwanStation.opt").let { it.contains("swanstation_GPU_ResolutionScale = \"4\"") && it.contains("swanstation_GPU_PGXPEnable = \"true\"") })
+        assertTrue(sharp.getValue("Flycast/Flycast.opt").contains("reicast_internal_resolution = \"1280x960\""))
+        assertTrue(sharp.getValue("Beetle PSX HW/Beetle PSX HW.opt").contains("beetle_psx_hw_internal_resolution = \"4x\""))
+        // the television consoles' own settings
+        assertTrue(files.getValue("Nestopia/Nestopia.opt").contains("nestopia_palette = \"cxa2025as\""))
+        assertTrue(files.getValue("Snes9x/Snes9x.opt").contains("snes9x_aspect = \"ntsc\""))
+        assertTrue(files.getValue("Beetle PCE/Beetle PCE.opt").contains("pce_palette = \"Composite\""))
+        assertTrue(files.getValue("Genesis Plus GX/genesis.opt").let { it.contains("genesis_plus_gx_overscan = \"top/bottom\"") && it.contains("genesis_plus_gx_system_bram = \"per game\"") })
+        assertTrue(files.getValue("Genesis Plus GX/gamegear.opt").let { it.contains("genesis_plus_gx_overscan = \"disabled\"") && it.contains("genesis_plus_gx_lcd_filter = \"enabled\"") })
+        assertTrue(files.getValue("MAME 2003-Plus/MAME 2003-Plus.opt").contains("mame2003-plus_tate_mode = \"enabled\""))
         assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg").contains("input_poll_type_behavior = \"0\""))
         val base = RetroPack.base(Look(), p)
         assertEquals("true", base["video_scale_integer"]); assertEquals("22", base["aspect_ratio_index"])
@@ -577,15 +593,15 @@ class RetroPackTest {
     @Test fun motionClarityNeedsAFastPanelAndSkipsFiftyHertzGames() {
         val slow = RetroPack.files(Look(hz = 60), p)
         assertTrue(slow.getValue("Snes9x/Snes9x.cfg").contains("video_shader_subframes = \"1\""))
-        assertTrue(slow.getValue("FinalBurn Neo/FinalBurn Neo.slangp").startsWith("shaders = \"1\"\n"))
-        assertTrue(slow.getValue("Snes9x/Snes9x.slangp").startsWith("shaders = \"5\"\n") && !slow.getValue("Snes9x/Snes9x.slangp").contains("beam"))   // S-video, then the tube
+        assertTrue(slow.getValue("FinalBurn Neo/FinalBurn Neo.slangp").startsWith("shaders = \"2\"\n"))
+        assertTrue(slow.getValue("Snes9x/Snes9x.slangp").startsWith("shaders = \"6\"\n") && !slow.getValue("Snes9x/Snes9x.slangp").contains("-beam"))   // composite, the colour, then the tube
         val pal = RetroPack.files(Look(), p, listOf("snes" to "Verdant Spire (Europe)", "gb" to "Some Game (Europe)"))
         assertEquals("video_shader_subframes = \"1\"\nvideo_black_frame_insertion = \"0\"\n", pal["Snes9x/Verdant Spire (Europe).cfg"])
         assertEquals(null, pal["Gambatte/Some Game (Europe).cfg"])
         val black = RetroPack.files(Look(motion = "Black frames"), p)
         assertTrue(black.getValue("Nestopia/Nestopia.cfg").contains("video_black_frame_insertion = \"1\""))
-        assertTrue(black.getValue("Nestopia/Nestopia.slangp").startsWith("shaders = \"5\"\n"))
-        assertTrue(!black.getValue("Nestopia/Nestopia.slangp").contains("beam"))
+        assertTrue(black.getValue("Nestopia/Nestopia.slangp").startsWith("shaders = \"6\"\n"))
+        assertTrue(!black.getValue("Nestopia/Nestopia.slangp").contains("-beam"))
     }
 
     @Test fun everyChoiceProducesFilesAndOffProducesNoPreset() {
@@ -597,18 +613,32 @@ class RetroPackTest {
         }
         // handheld screens never get the motion pass
         assertTrue(RetroPack.files(Look(), p).getValue("Genesis Plus GX/gamegear.cfg").contains("video_shader_subframes = \"1\""))
-        // square pixels where that makes the picture an exact multiple of this panel: Game Gear 6x, Master System 5x
+        // each console at its own pixel shape: the Game Gear's 6:5 pixels at exactly 6 x 5 screen pixels on a 4:3 screen
+        // (or a whole multiple), the core's shape at whole steps elsewhere and on a television; the Master System at the
+        // shape its core reports (written out, so an earlier square-pixel setting does not stay)
         val files = RetroPack.files(Look(), p)
-        for (f in listOf("Genesis Plus GX/gamegear.cfg", "Genesis Plus GX/mastersystem.cfg")) assertTrue(f, files.getValue(f).contains("aspect_ratio_index = \"21\""))
+        assertTrue(files.getValue("Genesis Plus GX/gamegear.cfg").let { it.contains("aspect_ratio_index = \"23\"") && it.contains("custom_viewport_width = \"960\"") &&
+            it.contains("custom_viewport_height = \"720\"") && it.contains("custom_viewport_x = \"0\"") && it.contains("custom_viewport_y = \"0\"") })
+        assertEquals(1920 to 1440, RetroPack.gameGearSize(Look(panel = 2048 to 1536)))
+        assertNull(RetroPack.gameGearSize(Look(panel = 1920 to 1080)))
+        assertNull(RetroPack.gameGearSize(Look(panel = 640 to 480)))
+        assertNull(RetroPack.gameGearSize(Look(tv = true)))
+        for (look in listOf(Look(tv = true), Look(panel = 1920 to 1080)))
+            assertTrue(RetroPack.files(look, p).getValue("Genesis Plus GX/gamegear.cfg").let { it.contains("aspect_ratio_index = \"22\"") && it.contains("video_scale_integer_axis = \"1\"") })
+        assertTrue(files.getValue("Genesis Plus GX/mastersystem.cfg").contains("aspect_ratio_index = \"22\""))
         assertFalse(files.getValue("Genesis Plus GX/Genesis Plus GX.cfg").contains("aspect_ratio_index"))     // the Genesis keeps its TV shape
         assertTrue(files.getValue("Nestopia/Nestopia.opt").contains("nestopia_blargg_ntsc_filter = \"disabled\""))   // the CRT shader is the TV
-        // Game Boy and Game Boy Color: Pixel Transparency over the chosen grid; the Game Boy Advance keeps the grid alone
-        assertTrue(files.getValue("Gambatte/Gambatte.slangp").contains("presets/pixel_transparency/pixel_transparency-lcd3x.slangp"))
-        assertTrue(files.getValue("mGBA/mGBA.slangp").contains("handheld/lcd3x.slangp"))
+        // with a plain grid chosen: Game Boy and Game Boy Color get Pixel Transparency over it; the Game Boy Advance the grid alone
+        val grid = RetroPack.files(Look(handheld = "LCD3x"), p)
+        assertTrue(grid.getValue("Gambatte/Gambatte.slangp").contains("presets/pixel_transparency/pixel_transparency-lcd3x.slangp"))
+        assertTrue(grid.getValue("mGBA/mGBA.slangp").contains("handheld/lcd3x.slangp"))
+        assertTrue(grid.getValue("Gambatte/gb.opt").contains("gambatte_gb_internal_palette = \"GB - DMG\""))   // the original's own palette
+        assertFalse("Gambatte/gb.slangp" in grid)
         assertTrue(RetroPack.files(Look(handheld = "Off"), p).getValue("Gambatte/Gambatte.slangp").contains("handheld/pixel_transparency.slangp"))
-        assertTrue(RetroPack.files(Look(transparency = false), p).getValue("Gambatte/Gambatte.slangp").contains("handheld/lcd3x.slangp"))
-        assertTrue(files.getValue("mGBA/gbc.slangp").contains("pixel_transparency"))            // a Game Boy Color game moved to mGBA
-        assertFalse("mGBA/gbc.slangp" in RetroPack.files(Look(transparency = false), p))
+        assertTrue(RetroPack.files(Look(handheld = "LCD3x", transparency = false), p).getValue("Gambatte/Gambatte.slangp").contains("handheld/lcd3x.slangp"))
+        assertTrue(grid.getValue("mGBA/gbc.slangp").contains("pixel_transparency"))            // a Game Boy Color game moved to mGBA
+        assertFalse("mGBA/gbc.slangp" in RetroPack.files(Look(handheld = "LCD3x", transparency = false), p))
+        assertTrue(files.getValue("Genesis Plus GX/gamegear.slangp").contains("handheld/lcd-grid-v2.slangp"))
         // the grid Off: the Game Gear gets a plain pass, not the Genesis's CRT
         assertTrue(RetroPack.files(Look(handheld = "Off"), p).getValue("Genesis Plus GX/gamegear.slangp").contains("stock.slang"))
     }
@@ -707,15 +737,16 @@ class UprightAndSoundTest {
         // Below 4 kHz, where nearly all of a game's sound is, nothing is lifted more than 1.5 dB past the headroom
         // taken first; the top end's lift stops at 6 dB. The limiter catches the rest.
         for (hz in 20..4000 step 10) assertTrue("at $hz Hz", SpeakerChain.correction(hz.toDouble()) <= -SpeakerChain.INPUT_GAIN + 1.5)
-        for (hz in 20..24000 step 10) assertTrue("at $hz Hz", SpeakerChain.correction(hz.toDouble()) <= 6.0)
+        for (hz in 20..6300 step 10) assertTrue("at $hz Hz", SpeakerChain.correction(hz.toDouble()) <= SpeakerChain.LIFT)
+        for (hz in 6301..24000 step 10) assertTrue("at $hz Hz", SpeakerChain.correction(hz.toDouble()) <= SpeakerChain.TOP_LIFT)
         // No bass boost: up to 315 Hz the chain only ever cuts.
         for (hz in 20..315) assertTrue(SpeakerChain.correction(hz.toDouble()) <= 0.0)
         // What the measurement found: a little more of the lowest notes the speakers can play, the boxy bump around
         // 700 Hz and the sharp peak at 5 kHz taken down, and a lift where they fall away at the top.
         assertTrue(SpeakerChain.correction(450.0) in 2.5..3.5)
-        assertTrue(SpeakerChain.correction(700.0) in -7.0..-5.0)
-        assertTrue(SpeakerChain.correction(5000.0) < -4.0 && SpeakerChain.correction(5500.0) < -4.0)
-        assertTrue(SpeakerChain.correction(9000.0) in 5.5..6.0)
+        assertTrue(SpeakerChain.correction(900.0) in -3.0..-1.5)
+        assertTrue(SpeakerChain.correction(5000.0) < -4.0 && SpeakerChain.correction(5500.0) < -2.5)
+        assertTrue(SpeakerChain.correction(9000.0) in 11.5..12.0)
         // Bands rise in order, end at 24 kHz, and the player's tone is added on top.
         val flat = SpeakerChain.bands(listOf(0, 0, 0, 0, 0))
         assertEquals(24000f, flat.last().first)
@@ -1044,7 +1075,15 @@ class ExtrasTest {
         assertTrue(docs.indexOfFirst { it.path == "Config/Profiles/GCPad/Timeline.ini" } < docs.indexOfFirst { it.path == "GameSettings/G.ini" })
         val g = byPath.getValue("GameSettings/G.ini").text!!
         assertEquals("Vulkan", Ini.value(g, "Core", "GFXBackend"))
-        assertEquals("2", Ini.value(g, "Video_Settings", "InternalResolution"))
+        assertEquals("1", Ini.value(g, "Video_Settings", "InternalResolution"))
+        assertEquals("True", Ini.value(g, "Core", "ProgressiveScan"))           // component, the best cable they had
+        assertEquals("False", Ini.value(DolphinPack.docs(Look(signal = mapOf("gcwii" to "Composite")), "Android/1/Retroid Pocket Controller")
+            .single { it.path == "GameSettings/G.ini" }.text!!, "Core", "ProgressiveScan"))
+        assertEquals("False", Ini.value(g, "Video_Enhancements", "DisableCopyFilter"))
+        assertEquals("False", Ini.value(g, "Video_Enhancements", "ForceTrueColor"))
+        val gs = DolphinPack.docs(Look(sharp = true, signal = mapOf("gcwii" to "Component")), "Android/1/Retroid Pocket Controller").single { it.path == "GameSettings/G.ini" }.text!!
+        assertEquals("2", Ini.value(gs, "Video_Settings", "InternalResolution")); assertEquals("True", Ini.value(gs, "Core", "ProgressiveScan"))
+        assertEquals("True", Ini.value(gs, "Video_Enhancements", "DisableCopyFilter"))
         assertEquals("2", Ini.value(g, "Video_Settings", "ShaderCompilationMode"))
         assertEquals("True", Ini.value(g, "Video_Settings", "WaitForShadersBeforeStarting"))
         assertEquals("False", Ini.value(g, "Dolphin.Android", "ShowInputOverlay"))
@@ -1151,7 +1190,7 @@ class ExtrasTest {
         assertFalse(files.getValue("SwanStation/SwanStation.opt").contains("PGXPCPU = \"true\""))   // not for every game
         val mm = files.getValue("Mupen64Plus-Next/Legend of Zelda, The - Majora's Mask (USA).opt")
         assertTrue(mm.contains("mupen64plus-EnableCopyAuxToRDRAM = \"True\"") && mm.contains("mupen64plus-43screensize"))
-        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_anisotropic_filtering = \"16\""))
+        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_anisotropic_filtering = \"off\""))
         // a game run lighter keeps its fix
         val light = RetroPack.files(Look(lighter = mapOf("psx/Tekken 3 (USA)" to true)), RetroPack.Paths("/h", "pkg", "/d", "/a"))
         assertTrue(light.getValue("SwanStation/Tekken 3 (USA).opt").contains("swanstation_GPU_PGXPCPU = \"true\""))
@@ -1642,100 +1681,148 @@ class ExtrasTest {
     }
 
     @Test fun theThreeDConsolesGetTheTelevisionConsolesCrtAtTheirOwnLines() {
-        // the collection's GDV, as far as the changes go: the struct, the parameter lines and the one decision
+        // the collection's GDV, as far as the changes go: the struct, the parameter lines, the decision, the centring and the glow
         val gdv = "#version 450\nlayout(push_constant) uniform Push\n{\n\tfloat sat;\n\tfloat thres;\n} params;\n" +
             "// Parameter lines go here:\n#pragma parameter sat \"x\" 1.2 0.0 2.0 0.05\nvoid main(){ vec4 SourceSize = global.SourceSize;\n" +
-            "\tif (OriginalSize.y >= 400.0) {color = (color1 + color2)/2.0;}\n}\n"
+            "\tvec2 OGL2Pos = pos * SourceSize.xy;\n\tif (OriginalSize.y >= 400.0) {color = (color1 + color2)/2.0;}\n\tcolor += glow0(pC4,color);\n}\n"
         val made = Crt3d.slang(gdv)!!
         assertTrue(made.contains("float gdv_hires;"))
         assertTrue(made.contains("#define gdv_hires params.gdv_hires"))
         assertTrue(made.contains("if (gdv_hires > 0.0 && global.SourceSize.y >= gdv_hires)"))
         assertFalse(made.contains("OriginalSize.y >= 400.0"))
+        assertTrue(made.contains("vec2 OGL2Pos = pos * SourceSize.xy - vec2(0.5, global.OutputSize.y * SourceSize.w < 3.0 ? 0.25 : 0.5);") && made.contains("if (glow > 0.0) color += glow0(pC4,color);"))
         assertNull(Crt3d.slang(gdv.replace("OriginalSize.y >= 400.0", "OriginalSize.y > 400.0")))   // not the file it was written for
+        assertNull(Crt3d.slang(gdv.replace("vec2 OGL2Pos = pos * SourceSize.xy;", "vec2 OGL2Pos = pos;")))
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val off = Look(motion3d = "Off")
         val files = RetroPack.files(off, p)
-        // four times the detail: two halvings to 240 lines, then GDV; Dreamcast's 960 is one halving to 480; Saturn none
+        // the true picture: PlayStation and Dreamcast at their own size, nothing to bring down; composite, the set's
+        // colour, then GDV, with 480-line pictures drawn without gaps
         val psx = files.getValue("SwanStation/SwanStation.slangp")
-        // (PlayStation and Nintendo 64 also get S-video, after the halvings; Saturn composite, at its own size; Dreamcast RGB)
-        assertTrue(psx.contains("shaders = \"4\"") && psx.contains("scale_y0 = \"0.5\"") && psx.contains("scale_y1 = \"0.5\""))
-        assertTrue(psx.contains("shader2 = \"/h/shaders/timeline/timeline-signal.slang\"") && psx.contains("tl_signal = \"1.0\"") && psx.contains("tl_width = \"320.0\""))
-        assertTrue(psx.contains("shader3 = \"/h/shaders/timeline/crt-gdv-3d.slang\""))
-        assertTrue(files.getValue("Flycast/Flycast.slangp").contains("shaders = \"2\""))
+        assertTrue(psx.contains("shaders = \"3\"") && psx.contains("shader0 = \"/h/shaders/timeline/timeline-signal.slang\"") && psx.contains("tl_signal = \"2.0\"") && psx.contains("tl_width = \"320.0\""))
+        assertTrue(psx.contains("shader1 = \"/h/shaders/timeline/timeline-colour.slang\"") && psx.contains("shader2 = \"/h/shaders/timeline/crt-gdv-3d.slang\"") && psx.contains("gdv_hires = \"400.0\""))
+        // Dreamcast through its VGA box: no television signal, and each of its 480 lines drawn crisply
+        val dc = files.getValue("Flycast/Flycast.slangp")
+        assertTrue(dc.contains("shaders = \"2\"") && !dc.contains("timeline-signal") && dc.contains("gdv_hires = \"0.0\""))
+        assertTrue(dc.contains("scanline = \"9.0\"") && dc.contains("tl_white = \"3.0\""))     // a PC monitor of its day
+        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_cable_type = \"VGA\""))
+        val tvdc = RetroPack.files(off.copy(signal = mapOf("dreamcast" to "Composite")), p)
+        assertTrue(tvdc.getValue("Flycast/Flycast.slangp").let { it.contains("shaders = \"3\"") && it.contains("tl_width = \"320.0\"") && it.contains("gdv_hires = \"400.0\"") })
+        assertTrue(tvdc.getValue("Flycast/Flycast.opt").contains("reicast_cable_type = \"TV (Composite)\""))
         val saturn = files.getValue("Beetle Saturn/Beetle Saturn.slangp")
-        assertTrue(saturn.contains("shaders = \"5\"") && saturn.contains("alias0 = \"PrePass0\"") && saturn.contains("ntsc-pass3.slang") && saturn.contains("cust_artifacting = \"1.0\""))
-        // Nintendo 64 runs under OpenGL: the GLSL one, with the GLSL plain passes and the GLSL signal
+        assertTrue(saturn.contains("shaders = \"6\"") && saturn.contains("alias0 = \"PrePass0\"") && saturn.contains("ntsc-pass3.slang") && saturn.contains("cust_artifacting = \"1.0\"") && saturn.contains("auto_res = \"1.0\""))
+        // Nintendo 64: four times its detail in both looks, brought back to 320 x 240 both ways (the GLSL passes, under OpenGL)
         val n64 = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp")
-        assertTrue(n64.contains("shader0 = \"/h/shaders/timeline/stock.glsl\"") && n64.contains("shader2 = \"/h/shaders/timeline/timeline-signal.glsl\"") &&
-            n64.contains("shader3 = \"/h/shaders/timeline/crt-gdv-3d.glsl\""))
-        // PlayStation drawn in software, or 3D detail off: already the console's own lines, the signal then the tube
-        assertTrue(RetroPack.files(off.copy(compatible = true), p).getValue("SwanStation/SwanStation.slangp").contains("shaders = \"2\""))
-        assertTrue(RetroPack.files(off.copy(sharp = false), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp").contains("shaders = \"2\""))
-        // a game run lighter has its own preset without halvings
-        val light = RetroPack.files(off.copy(lighter = mapOf("psx/Brawl Circuit 3 (USA)" to true)), p)
-        assertTrue(light.getValue("SwanStation/Brawl Circuit 3 (USA).slangp").contains("shaders = \"2\""))
-        // RGB chosen: the tube alone, as before
-        val rgb = RetroPack.files(off.copy(signal = mapOf("psx" to "RGB", "saturn" to "RGB")), p)
-        assertTrue(rgb.getValue("SwanStation/SwanStation.slangp").contains("shaders = \"3\"") && !rgb.getValue("SwanStation/SwanStation.slangp").contains("signal"))
-        assertTrue(rgb.getValue("Beetle Saturn/Beetle Saturn.slangp").contains("shaders = \"1\""))
+        assertTrue(n64.contains("shaders = \"5\"") && n64.contains("shader0 = \"/h/shaders/timeline/stock.glsl\"") && n64.contains("scale_x0 = \"0.5\"") && n64.contains("scale_y1 = \"0.5\"") &&
+            n64.contains("shader2 = \"/h/shaders/timeline/timeline-signal.glsl\"") && n64.contains("shader3 = \"/h/shaders/timeline/timeline-colour.glsl\"") &&
+            n64.contains("shader4 = \"/h/shaders/timeline/crt-gdv-3d.glsl\"") && n64.contains("gamma_out = \"2.3\""))
+        // the sharper look: four times, PlayStation brought back to its lines only, and lines drawn at every count
+        val sharp = RetroPack.files(off.copy(sharp = true), p)
+        val spsx = sharp.getValue("SwanStation/SwanStation.slangp")
+        assertTrue(spsx.contains("shaders = \"5\"") && spsx.contains("scale_x0 = \"1.0\"") && spsx.contains("scale_y1 = \"0.5\"") && spsx.contains("gdv_hires = \"0.0\""))
+        assertTrue(sharp.getValue("Flycast/Flycast.slangp").contains("shaders = \"3\""))
+        // PlayStation drawn in software: its own lines already
+        assertTrue(RetroPack.files(off.copy(compatible = true, sharp = true), p).getValue("SwanStation/SwanStation.slangp").contains("shaders = \"3\""))
+        // a game run lighter has its own preset without halvings: Nintendo 64 in either look, PlayStation in the sharper one
+        assertTrue(RetroPack.files(off.copy(lighter = mapOf("n64/Bristle's Rough Night (USA)" to true)), p)
+            .getValue("Mupen64Plus-Next/Bristle's Rough Night (USA).glslp").contains("shaders = \"3\""))
+        val light = RetroPack.files(off.copy(sharp = true, lighter = mapOf("psx/Brawl Circuit 3 (USA)" to true)), p)
+        assertTrue(light.getValue("SwanStation/Brawl Circuit 3 (USA).slangp").contains("shaders = \"3\""))
+        assertNull(RetroPack.files(off.copy(lighter = mapOf("psx/Brawl Circuit 3 (USA)" to true)), p)["SwanStation/Brawl Circuit 3 (USA).slangp"])
+        // RGB, or the Dreamcast's VGA box: no signal pass; VGA keeps a monitor's lines, and the console is told
+        val rgb = RetroPack.files(off.copy(signal = mapOf("psx" to "RGB", "saturn" to "RGB", "dreamcast" to "VGA")), p)
+        assertTrue(rgb.getValue("SwanStation/SwanStation.slangp").contains("shaders = \"2\"") && !rgb.getValue("SwanStation/SwanStation.slangp").contains("signal"))
+        assertTrue(rgb.getValue("Beetle Saturn/Beetle Saturn.slangp").contains("shaders = \"2\""))
+        assertTrue(rgb.getValue("Flycast/Flycast.slangp").contains("gdv_hires = \"0.0\"") && rgb.getValue("Flycast/Flycast.opt").contains("reicast_cable_type = \"VGA\""))
         // switched off, or the collection's GDV unusable: no Vulkan presets for these (the GLSL ones are the launcher's own)
         assertNull(RetroPack.files(off.copy(crt3d = false), p)["SwanStation/SwanStation.slangp"])
         assertNull(RetroPack.files(off.copy(crt3d = false), p)["Mupen64Plus-Next/Mupen64Plus-Next.glslp"])
         assertNull(RetroPack.files(off.copy(crt3dSlang = false), p)["SwanStation/SwanStation.slangp"])
         assertNotNull(RetroPack.files(Look(crt3dSlang = false), p)["Mupen64Plus-Next/Mupen64Plus-Next.glslp"])
-        // the GLSL and Dolphin versions carry GDV's own figures
-        for (k in listOf("scanline 10.0", "beam_min 1.5", "beam_max 2.0", "h_sharp 2.5", "thres 0.4", "brightboost 1.2", "glow 0.35")) assertTrue(k, Crt3d.glsl.contains("#define $k"))
-        assertTrue(Crt3d.dolphin.contains("SetOutput(") && Crt3d.dolphin.contains("[configuration]"))
+        // the GLSL version carries the true picture's figures: GDV's beam, without its glow, boost, mask or vignette,
+        // brighter lines wider, gamma out 2.3, and the beam centered on its line
+        for (k in listOf("scanline 10.0", "beam_min 1.5", "beam_max 2.5", "h_sharp 2.5", "thres 0.4", "brightboost 1.0", "glow 0.0",
+            "sat 1.0", "shadowMask -1.0", "vignette 0.0", "gamma_out 2.3")) assertTrue(k, Crt3d.glsl.contains("#define $k\n"))
+        assertTrue(Crt3d.glsl.contains("TEX0.xy * TextureSize - vec2(0.5, OutputSize.y / InputSize.y < 3.0 ? 0.25 : 0.5)") && Crt3d.glsl.contains("if (glow > 0.0) color += glow0"))
+        assertTrue(Crt3d.dolphin(0.25, 2, "2.0", 0.0).let { it.contains("SetOutput(") && it.contains("[configuration]") })
     }
 
     @Test fun eachConsoleReachesTheTubeByItsOwnSignal() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val look = Look()
-        // the usual American hookup of each, first in its list
-        assertEquals("Composite", look.signalOf("genesis")); assertEquals("S-video", look.signalOf("snes")); assertEquals("RGB", look.signalOf("arcade"))
-        assertEquals("Composite", look.signalOf("nes")); assertEquals("S-video", look.signalOf("psx")); assertEquals("RGB", look.signalOf("dreamcast"))
+        // composite for the consoles whose art leaned on it, an arcade monitor's RGB, and from the Nintendo 64 on the best
+        // connection each had
+        for (g in listOf("nes", "snes", "genesis", "tg16", "atari2600", "psx", "saturn")) assertEquals(g, "Composite", look.signalOf(g))
+        assertEquals("RGB", look.signalOf("arcade")); assertEquals("S-video", look.signalOf("n64")); assertEquals("VGA", look.signalOf("dreamcast"))
+        assertEquals("Component", look.signalOf("gcwii")); assertEquals("Component", look.signalOf("ps2"))
         assertEquals("RGB", look.copy(signal = mapOf("genesis" to "RGB")).signalOf("genesis"))
         assertEquals("Composite", look.copy(signal = mapOf("genesis" to "Nonsense")).signalOf("genesis"))
+        assertEquals("VGA", look.copy(signal = mapOf("dreamcast" to "RGB")).signalOf("dreamcast"))     // RGB was never an American Dreamcast's
         val files = RetroPack.files(look, p)
-        // Genesis: the NTSC filter at its own width, then the beam, then the tube; composite keeps its artifacts
+        // Genesis: its measured colour levels, the beam, the NTSC filter at its own width, the set's colour, then the tube
         val md = files.getValue("Genesis Plus GX/Genesis Plus GX.slangp")
-        assertTrue(md.startsWith("shaders = \"6\"\n"))
-        // (the beam first: after the filter it broke the picture on the Nova)
-        for (line in listOf("shader1 = \"/h/shaders/shaders_slang/stock.slang\"".replace("/h/shaders/shaders_slang", p.slang), "alias1 = \"PrePass0\"", "alias2 = \"NPass1\"",
-            "scale_x2 = \"4.0\"", "scale_x3 = \"0.5\"", "float_framebuffer3 = \"true\"", "cust_artifacting = \"1.0\"", "cust_fringing = \"1.0\"",
-            "scale_type5 = \"viewport\"", "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\""))
+        assertTrue(md.startsWith("shaders = \"8\"\n"))
+        assertTrue(md.contains("shader0 = \"/h/shaders/timeline/timeline-genesis-dac.slang\""))
+        assertTrue(md.contains("shader1 = \"${p.slang}/subframe-bfi/shaders/crt-beam-simulator.slang\""))
+        for (line in listOf("shader2 = \"${p.slang}/stock.slang\"", "alias2 = \"PrePass0\"", "alias3 = \"NPass1\"",
+            "scale_x3 = \"4.0\"", "scale_x4 = \"0.5\"", "float_framebuffer4 = \"true\"", "cust_artifacting = \"1.0\"", "cust_fringing = \"1.0\"",
+            "shader6 = \"/h/shaders/timeline/timeline-colour.slang\"", "tl_white = \"2.0\"",
+            "shader7 = \"/h/shaders/timeline/crt-gdv-3d.slang\"", "scale_type7 = \"viewport\"", "gdv_hires = \"400.0\"",
+            "GAIN_VS_BLUR = \"0.5\"", "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "ntsc_rainbow1 = \"1.0\"",
+            "glow = \"0.00\"", "brightboost = \"1.00\"", "sat = \"1.00\"", "beam_max = \"2.50\"", "shadowMask = \"-1.0\"", "vignette = \"0.0\"", "gamma_out_red = \"2.3\""))
             assertTrue(line, md.contains(line))
-        assertTrue(md.contains("shader0 = \"${p.slang}/subframe-bfi/shaders/crt-beam-simulator.slang\"") && md.contains("shader5 = \"${p.slang}/crt/shaders/crt-gdv-mini-ultra.slang\""))
         // parameters come after every pass
-        assertTrue(md.indexOf("cust_artifacting") > md.indexOf("shader5"))
-        // SNES: S-video, without artifacts or fringes; TurboGrafx: the filter's PC Engine timing
-        assertTrue(files.getValue("Snes9x/Snes9x.slangp").contains("cust_artifacting = \"0.0\""))
-        assertTrue(files.getValue("Beetle PCE/Beetle PCE.slangp").contains("ntsc_phase = \"5.0\""))
-        assertFalse(files.getValue("Nestopia/Nestopia.slangp").contains("ntsc_phase"))
+        assertTrue(md.indexOf("cust_artifacting") > md.indexOf("shader7"))
+        // SNES: composite, its 3-phase timing, hi-res frames counted in its own pixels; TurboGrafx: its own timing too
+        val sfc = files.getValue("Snes9x/Snes9x.slangp")
+        assertTrue(sfc.contains("cust_artifacting = \"1.0\"") && sfc.contains("ntsc_phase = \"3.0\"") && sfc.contains("auto_res = \"1.0\""))
+        assertFalse(sfc.contains("genesis-dac"))
+        assertTrue(files.getValue("Beetle PCE/Beetle PCE.slangp").let { it.contains("ntsc_phase = \"5.0\"") && it.contains("auto_res = \"1.0\"") })
+        assertTrue(files.getValue("Nestopia/Nestopia.slangp").contains("ntsc_phase = \"3.0\""))
+        // Master System: its own chain, its static artifacts at the NES's pixel width, none of the Genesis's levels
+        val sms = files.getValue("Genesis Plus GX/mastersystem.slangp")
+        assertTrue(sms.contains("ntsc_phase = \"5.0\"") && sms.contains("ntsc_rainbow1 = \"1.0\"") && !sms.contains("genesis-dac"))
+        // Atari: Stella's own television filter instead of guest's
+        assertFalse(files.getValue("Stella/Stella.slangp").contains("ntsc"))
+        assertTrue(files.getValue("Stella/Stella.opt").contains("stella_filter = \"composite\""))
+        // RF, as most of these consoles came in the box
+        assertTrue(RetroPack.files(look.copy(signal = mapOf("nes" to "RF")), p).getValue("Nestopia/Nestopia.slangp").contains("cust_artifacting = \"2.0\""))
         // arcade: RGB, no filter
         assertFalse(files.getValue("FinalBurn Neo/FinalBurn Neo.slangp").contains("ntsc"))
-        // the screen Off: drawn clean, no signal either
+        // the screen Off: drawn clean, no signal, colour or levels either
         val clean = RetroPack.files(look.copy(crt = "Off"), p)
-        assertFalse(clean.getValue("Genesis Plus GX/Genesis Plus GX.slangp").contains("ntsc"))
+        assertFalse(clean.getValue("Genesis Plus GX/Genesis Plus GX.slangp").let { it.contains("ntsc") || it.contains("colour") || it.contains("genesis-dac") })
         assertNull(RetroPack.files(look.copy(crt = "Off", motion = "Off"), p)["Genesis Plus GX/Genesis Plus GX.slangp"])
-        // the Game Gear keeps its LCD
-        assertTrue(files.getValue("Genesis Plus GX/gamegear.slangp").contains("lcd3x"))
+        // without Timeline's own copy of GDV, the collection's, with the same settings
+        assertTrue(RetroPack.files(look.copy(crt3dSlang = false), p).getValue("Snes9x/Snes9x.slangp").contains("${p.slang}/crt/shaders/crt-gdv-mini-ultra.slang"))
         // Timeline's own signal shader, in both languages, and its two values
         assertEquals("2.0", Signal.value("Composite")); assertEquals("1.0", Signal.value("S-video"))
         assertTrue(Signal.slang.contains("#pragma parameter tl_signal") && Signal.slang.contains("tl_width"))
         assertTrue(Signal.glsl.contains("#pragma parameter tl_signal") && Signal.glsl.contains("uniform float tl_signal, tl_width"))
+        // the television's white: American by default, and each choice's value
+        assertEquals("2.0", RetroPack.whiteValue(look)); assertEquals("0.0", RetroPack.whiteValue(look.copy(white = "Studio (6500 K)")))
+        assertEquals("3.0", RetroPack.whiteValue(look.copy(white = "Japanese TV (9300 K)")))
+        for (src in listOf(Colour.slang, Colour.glsl)) assertTrue(src.contains("W8000") && src.contains("tl_white") && !src.contains("\$"))
     }
 
-    @Test fun gameCubeWiiAndPs2GetFourHundredEightyLinesAndAGrille() {
-        // GameCube and Wii send 480 lines: the spacing is measured on the screen and rounded to whole rows, not four rows fixed
-        assertTrue(Crt3d.dolphin.contains("/ 480.0") && Crt3d.dolphin.contains("dFdy(GetCoordinates().y)") && Crt3d.dolphin.contains("max(2.0, floor(rows + 0.5))"))
-        assertFalse(Crt3d.dolphin.contains("mod(floor(gl_FragCoord.y), 4.0)"))
-        // an aperture grille, red, green and blue stripes, not a black column
-        assertTrue(Crt3d.dolphin.contains("float3(1.0, 1.0 - m, 1.0 - m)") && Crt3d.dolphin.contains("OptionName = mask"))
+    @Test fun gameCubeWiiAndPs2GetATelevisionsFourHundredEightyLines() {
+        val dol = Crt3d.dolphin(0.25, 2, "2.0", 0.0)
+        // GameCube and Wii send 480 lines: the spacing is measured on the screen, the structure faint, in light
+        assertTrue(dol.contains("/ 480.0") && dol.contains("dFdy(GetCoordinates().y)") && dol.contains("float3 tv(") && dol.contains("whiteOf("))
+        assertTrue(dol.contains("OptionName = lines\nMinValue = 0.0\nMaxValue = 0.9\nStepAmount = 0.05\nDefaultValue = 0.25\n"))
+        assertTrue(dol.contains("OptionName = mask") && dol.contains("OptionName = signal") && !dol.contains("\${"))
+        assertFalse(dol.contains("mod(floor(gl_FragCoord.y), 4.0)") || dol.contains("lift"))
         // the same for PlayStation 2, as a slang shader and the preset ARMSX2 reads
-        assertTrue(Tv480.slang.contains("params.OutputSize.y / 480.0") && Tv480.slang.contains("vec3(1.0, 1.0 - m, 1.0 - m)"))
-        assertTrue(Tv480.preset.contains("shader0 = \"timeline-tv.slang\"") && Tv480.preset.contains("scale_type0 = \"viewport\""))
+        assertTrue(Tv480.slang.contains("params.OutputSize.y / 480.0") && Tv480.slang.contains("float3 tv(") && !Tv480.slang.contains("\$"))
+        val pre = Tv480.preset(0.25, 2, "2.0", 0.0)
+        for (line in listOf("shader0 = \"timeline-tv.slang\"", "scale_type0 = \"viewport\"", "tv_lines = \"0.25\"", "tv_signal = \"2.0\"", "tv_white = \"2.0\""))
+            assertTrue(line, pre.contains(line))
         assertEquals("timeline-crt.slangp", Tv480.PRESET)
+        // the settings each takes: a television's faint lines, or the sharper look's monitor lines; the cable; the white
+        assertEquals(RetroPack.TvLook(0.6, 0, "2.0", 0.0), RetroPack.tvLook(Look(), "ps2"))
+        assertEquals(RetroPack.TvLook(0.2, 2, "2.0", 0.0), RetroPack.tvLook(Look(signal = mapOf("ps2" to "Composite")), "ps2"))
+        assertEquals(RetroPack.TvLook(0.6, 0, "2.0", 0.0), RetroPack.tvLook(Look(), "gcwii"))
+        assertEquals(RetroPack.TvLook(0.2, 1, "3.0", 0.0), RetroPack.tvLook(Look(white = "Japanese TV (9300 K)", signal = mapOf("gcwii" to "S-video")), "gcwii"))
     }
 
     @Test fun aFrozenDolphinIsToldApartFromAnIdleOne() {
@@ -1934,7 +2021,7 @@ class ExtrasTest {
 
     @Test fun gameCubeAndWiiGetTheCrtAndAGameThatWillNotStartGetsOpenGl() {
         val docs = DolphinPack.docs(Look(dolphinGlCodes = mapOf("GFRE00" to true, "GM4E01" to false)), "Retroid Pocket Controller")
-        assertEquals(Crt3d.dolphin, docs.single { it.path == "Shaders/Timeline CRT.glsl" }.text)
+        assertEquals(Crt3d.dolphin(0.6, 0, "2.0", 0.0), docs.single { it.path == "Shaders/Timeline CRT.glsl" }.text)
         assertTrue(docs.single { it.path == "GameSettings/G.ini" }.text!!.contains("[Video_Enhancements]\nPostProcessingShader = Timeline CRT\n"))
         assertEquals(mapOf("Core" to mapOf("GFXBackend" to "OGL"), "Video_Settings" to mapOf("ShaderCompilationMode" to "0")),
             docs.single { it.path == "GameSettings/GFRE00.ini" }.set)
@@ -1961,7 +2048,7 @@ class ExtrasTest {
         assertTrue(files.getValue("SwanStation/CTR - Crash Team Racing (USA).opt").contains("swanstation_ControllerPorts_MultitapMode = \"Port1Only\""))
         assertTrue(files.getValue("Beetle PSX HW/Nickelodeon Rugrats - Search for Reptar (USA).opt").contains("beetle_psx_hw_enable_multitap_port1 = \"enabled\""))
         // the game's own file carries the rest of the core's settings too
-        assertTrue(files.getValue("SwanStation/CTR - Crash Team Racing (USA).opt").contains("swanstation_GPU_ResolutionScale = \"4\""))
+        assertTrue(files.getValue("SwanStation/CTR - Crash Team Racing (USA).opt").contains("swanstation_GPU_ResolutionScale = \"1\""))
         assertTrue(files.getValue("SwanStation/SwanStation.opt").contains("swanstation_ControllerPorts_MultitapMode = \"Disabled\""))
         // run lighter as well: one file with both
         val light = RetroPack.files(Look(lighter = mapOf("psx/CTR - Crash Team Racing (USA)" to true)), p).getValue("SwanStation/CTR - Crash Team Racing (USA).opt")
@@ -2115,10 +2202,12 @@ class ExtrasTest {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val files = RetroPack.files(Look(), p)
         val psx = files.getValue("SwanStation/SwanStation.slangp")
-        assertTrue(psx.contains("shaders = \"5\"") && psx.contains("shader0 = \"/h/shaders/shaders_slang/subframe-bfi/shaders/crt-beam-simulator.slang\"".replace("/h/shaders/shaders_slang", p.slang)))
-        assertTrue(psx.contains("shader3 = \"/h/shaders/timeline/timeline-signal.slang\"") && psx.contains("shader4 = \"/h/shaders/timeline/crt-gdv-3d.slang\"") && psx.contains("SCAN_DIRECTION"))
-        assertTrue(files.getValue("Beetle Saturn/Beetle Saturn.slangp").contains("shaders = \"6\""))
-        assertTrue(files.getValue("Flycast/Flycast.slangp").contains("shaders = \"3\""))
+        assertTrue(psx.contains("shaders = \"4\"") && psx.contains("shader0 = \"/h/shaders/shaders_slang/subframe-bfi/shaders/crt-beam-simulator.slang\"".replace("/h/shaders/shaders_slang", p.slang)))
+        assertTrue(psx.contains("shader1 = \"/h/shaders/timeline/timeline-signal.slang\"") && psx.contains("shader3 = \"/h/shaders/timeline/crt-gdv-3d.slang\"") && psx.contains("SCAN_DIRECTION"))
+        assertTrue(psx.contains("GAIN_VS_BLUR = \"0.5\""))     // half the light each refresh: a picture, then black
+        assertTrue(files.getValue("Beetle Saturn/Beetle Saturn.slangp").contains("shaders = \"7\""))
+        val dc = files.getValue("Flycast/Flycast.slangp")
+        assertTrue(dc.contains("shaders = \"3\"") && dc.contains("timeline-beam.slang") && dc.contains("GAIN_VS_BLUR = \"0.5\""))
         for (core in listOf("SwanStation", "Beetle PSX HW", "Beetle Saturn", "Flycast"))
             assertTrue(core, files.getValue("$core/$core.cfg").contains("video_shader_subframes = \"2\""))
         // Nintendo 64: GLideN64 at four times its detail under the older OpenGL driver, which has no beam: black
@@ -2128,16 +2217,16 @@ class ExtrasTest {
         val opt = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt")
         assertTrue(opt.contains("mupen64plus-rdp-plugin = \"gliden64\"") && opt.contains("mupen64plus-rsp-plugin = \"hle\"") && opt.contains("1280x960"))
         assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp").contains("crt-gdv-3d.glsl"))
-        assertFalse(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.slangp").contains("beam"))
+        assertFalse(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.slangp").contains("-beam"))
         assertTrue(RetroPack.files(Look(motion3d = "Off"), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg").contains("video_black_frame_insertion = \"0\""))
         assertTrue(RetroPack.files(Look(hz = 60), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg").contains("video_black_frame_insertion = \"0\""))
         // Dreamcast drawn the compatible way (OpenGL): none either
         val compat = RetroPack.files(Look(compatible = true), p)
         assertTrue(compat.getValue("Flycast/Flycast.cfg").contains("video_shader_subframes = \"1\""))
-        assertFalse(compat.getValue("Flycast/Flycast.slangp").contains("beam"))
+        assertFalse(compat.getValue("Flycast/Flycast.slangp").contains("-beam"))
         // at 60 Hz, on a television at 60: off everywhere
         assertTrue(RetroPack.files(Look(hz = 60), p).getValue("SwanStation/SwanStation.cfg").contains("video_shader_subframes = \"1\""))
-        assertFalse(RetroPack.files(Look(hz = 60), p).getValue("SwanStation/SwanStation.slangp").contains("beam"))
+        assertFalse(RetroPack.files(Look(hz = 60), p).getValue("SwanStation/SwanStation.slangp").contains("-beam"))
         // without the CRT look, the beam alone; 50 Hz games skip it
         assertTrue(RetroPack.files(Look(crt3d = false), p).getValue("SwanStation/SwanStation.slangp").contains("crt-beam-simulator"))
         val pal = RetroPack.files(Look(), p, listOf("psx" to "Some Game (Europe)"))

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0
+
+- **The true picture.** Every console is now set up to look the way it did on the screen it was played on in an
+  American home, from the consoles' own clocks, levels and cables:
+  - Composite by default for the consoles whose art leaned on it, from the Atari 2600 to the PlayStation and Saturn,
+    with RF offered for those that shipped with it; arcade on RGB; and from the Nintendo 64 on, the best connection
+    each had: S-video for the Nintendo 64, VGA for the Dreamcast, component for GameCube, Wii and PlayStation 2.
+  - The NTSC filter timed to each console: the NES and SNES's crawling artifacts, the Genesis and Master System's
+    still rainbow, SNES hi-res effects blended as a set blended them, and the Atari 2600 through Stella's own filter.
+  - The tube without the extra glow, brightness and saturation that clipped white and flattened the brighter half of
+    the picture; the tube's own gamma; each scanline centered on its line (it sat half a line high); no mask.
+  - An American set's color and white, about 8000 K, with 6500 K and Japanese 9300 K as choices.
+  - The screen of each period where it was not a living-room set: an arcade monitor seen up close, its mask showing,
+    at 9300 K; and for the Dreamcast's VGA box, a PC monitor of 1999 with fine distinct lines.
+  - The Genesis's measured color levels, NES color from an American set's decoder (pinned, so it no longer depends
+    on when the core was built), and the TurboGrafx's composite palette.
+  - Each console's own pixel shape: the Master System with its border, the SNES at 8:7, the Game Gear's wider pixels.
+  - PlayStation and Dreamcast at their own resolution, with the PlayStation's dithering and wobble; Nintendo 64 brought
+    back to its own 320 by 240 both ways; 480-line pictures without gaps between their lines, as interlaced pictures
+    looked; Saturn's interlaced games drawn field by field. The sharper look stays one switch away.
+  - GameCube and Wii at their own resolution and told which cable is in, so on composite the games keep their own
+    blending against flicker; GameCube, Wii and PlayStation 2 through a rebuilt 480-line television: on component,
+    the HD CRT of the day, with fine distinct scanlines.
+  - The handhelds as their screens were: the Game Boy's green dot matrix and smear, the Game Boy Color's washed-out
+    color, the Game Boy Advance's darker unlit screen, the Game Gear's slow backlit one, and the DS's color.
+  - The beam simulator at half the light each refresh, its own recommendation for 120 Hz.
+- **The Retroid Pocket Nova's speakers, measured again**, in the hands and on a desk as well as in front: a more even
+  curve from 400 Hz to 6.3 kHz, and the treble, where these speakers fall away steeply, lifted up to 12 dB instead of 6.
+
 ## 1.0.0
 
 The first public release.

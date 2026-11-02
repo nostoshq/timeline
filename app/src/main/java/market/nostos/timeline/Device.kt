@@ -921,13 +921,13 @@ object Ps2Look {
     }
 
     /** True once both files in ARMSX2's folder are the launcher's. */
-    fun sync(ctx: Context, pkg: String): Boolean = runCatching {
+    fun sync(ctx: Context, pkg: String, preset: String): Boolean = runCatching {
         if (!PACKAGE.matches(pkg)) return false
         val uid = ctx.packageManager.getApplicationInfo(pkg, 0).uid
         val from = java.io.File(ctx.filesDir, "armsx2-shaders").apply { mkdirs() }
         if (!PATH.matches(from.absolutePath)) return false
         java.io.File(from, Tv480.SLANG).writeText(Tv480.slang)
-        java.io.File(from, Tv480.PRESET).writeText(Tv480.preset)
+        java.io.File(from, Tv480.PRESET).writeText(preset)
         val file = java.io.File(ctx.filesDir, "armsx2-shaders.sh")
         if (!Scripts.write(file, script(pkg, uid, from.absolutePath))) return false
         Bridge.read("timeout 10 sh ${file.absolutePath}")?.lines()?.any { it.trim() == "ok" } == true

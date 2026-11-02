@@ -90,9 +90,9 @@ def make_signals(a, b, c, out, x=600, y=300):
     twice its size so the color fringes, the softness and the scanlines can be seen. 1760 pixels wide, to be shown at
     880, which is the render's own pixels on a high-density screen.
     """
-    panels = [("Composite", "NES, Genesis, TurboGrafx-16, Saturn"),
-              ("S-video", "Super Nintendo, PlayStation, Nintendo 64"),
-              ("RGB", "Arcade, Dreamcast")]
+    panels = [("Composite", "NES, SNES, Genesis, PlayStation, Saturn"),
+              ("S-video", "Nintendo 64"),
+              ("RGB", "Arcade; Dreamcast VGA and component alike")]
     size, gap, top = 560, 40, 132
     sheet = Image.new("RGB", (3 * size + 2 * gap, top + size), BLACK)
     d = ImageDraw.Draw(sheet)

@@ -28,21 +28,30 @@ object Crt3d {
     const val STOCK_GLSL = "stock.glsl"
     const val DOLPHIN = "Timeline CRT.glsl"
 
+    private const val CENTRE = "vec2 OGL2Pos = pos * SourceSize.xy;"
+    private const val GLOW = "color += glow0(pC4,color);"
+
     /**
-     * GDV Mini Ultra from the collection, with one decision changed: lines are averaged instead of drawn as
-     * scanlines only when the picture it is handed is at least [gdv_hires] lines tall (0: never), not when the
-     * console drew that many. Null when the file is not the one these changes were written for.
+     * GDV Mini Ultra from the collection, with three changes. Lines are averaged instead of drawn as scanlines only when
+     * the picture it is handed is at least [gdv_hires] lines tall (0: never), not when the console drew that many. Each
+     * beam is centered on its line, and each colour on its pixel: the original puts them half a console pixel up and to the
+     * left, which cut the top line in half and faded the last column into the border (measured on a test pattern: the
+     * brightest panel rows fell between lines). And the glow's 21 texture reads are skipped when the glow is off. Used by
+     * the television consoles too. Null when the file is not the one these changes were written for.
      */
     fun slang(gdv: String): String? {
         val struct = Regex("(float\\s+thres\\s*;)(\\s*\\}\\s*params\\s*;)")
         val params = "// Parameter lines go here:"
         val decision = "if (OriginalSize.y >= 400.0) {color = (color1 + color2)/2.0;}"
         if (!struct.containsMatchIn(gdv) || !gdv.contains(params) || !gdv.contains(decision)) return null
+        if (!gdv.contains(CENTRE) || !gdv.contains(GLOW)) return null
         return gdv
+            .replaceFirst(CENTRE, "vec2 OGL2Pos = pos * SourceSize.xy - vec2(0.5, global.OutputSize.y * SourceSize.w < 3.0 ? 0.25 : 0.5);   // Timeline: the beam centered on each line (a quarter line off at under 3 rows a line, so one row is beam and one is gap)")
+            .replaceFirst(GLOW, "if (glow > 0.0) color += glow0(pC4,color);")
             .replaceFirst(struct, "$1\n    float gdv_hires;$2")
             .replaceFirst(params, "$params\n#pragma parameter gdv_hires \"Average lines from this height (0: never)\" 0.0 0.0 1200.0 1.0\n#define gdv_hires params.gdv_hires")
             .replaceFirst(decision, "if (gdv_hires > 0.0 && global.SourceSize.y >= gdv_hires) {color = (color1 + color2)/2.0;}")
-            .replaceFirst("#version 450", "#version 450\n// Modified by Timeline (NOSTOS) from crt-gdv-mini-ultra.slang in RetroArch's shader collection: gdv_hires added.")
+            .replaceFirst("#version 450", "#version 450\n// Modified by Timeline (NOSTOS) from crt-gdv-mini-ultra.slang in RetroArch's shader collection: gdv_hires added, the beam centered on each line, the glow skipped when off.")
     }
 
     /** A plain pass, for bringing a picture down to its console's own lines with the sampler's averaging. */
@@ -90,7 +99,11 @@ void main()
 #endif
 """.trimStart()
 
-    /** GDV Mini Ultra in RetroArch's GLSL: the same parameters and defaults, without the curvature (set flat here). */
+    /**
+     * GDV Mini Ultra in RetroArch's GLSL, without the curvature (set flat here). Defaults are Timeline's true-picture
+     * settings, not the collection's (see [slang]): no glow, no bright boost, no extra saturation, no mask, no vignette,
+     * wider beams on bright lines, and the beam centered on each line.
+     */
     val glsl = """
 /*
    CRT - Guest - Nomask w. Curvature
@@ -113,22 +126,23 @@ void main()
    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
    
    Modified by NOSTOS for Timeline, October 2026: ported to GLSL for RetroArch's OpenGL driver, curvature removed,
-   gdv_hires added (lines are averaged only above a chosen picture height).
+   gdv_hires added (lines are averaged only above a chosen picture height). November 2026: the beam centered on each
+   line, the glow skipped when off, and defaults set to show the picture as a television did.
 */
 #pragma parameter scanline "Scanline Adjust" 10.0 1.0 15.0 1.0
 #pragma parameter beam_min "Scanline Dark" 1.5 0.5 3.0 0.05
-#pragma parameter beam_max "Scanline Bright" 2.0 0.5 3.0 0.05
+#pragma parameter beam_max "Scanline Bright" 2.5 0.5 3.0 0.05
 #pragma parameter h_sharp "Horizontal Sharpness" 2.5 1.0 5.0 0.05
-#pragma parameter shadowMask "CRT Mask: -1 none, 0 CGWG, 11 GDV" 11.0 -1.0 11.0 1.0
+#pragma parameter shadowMask "CRT Mask: -1 none, 0 CGWG, 11 GDV" -1.0 -1.0 11.0 1.0
 #pragma parameter thres "Mask Effect Threshold" 0.4 0.0 0.9 0.02
 #pragma parameter masksize "CRT Mask Size" 1.0 1.0 2.0 1.0
 #pragma parameter maskDark "Lottes maskDark" 0.0 0.0 2.0 0.1
 #pragma parameter CGWG "CGWG Mask Str." 1.0 0.0 1.0 0.1
-#pragma parameter vignette "Vignette On/Off" 1.0 0.0 1.0 1.0
-#pragma parameter gamma_out "Gamma out" 2.2 1.0 4.0 0.1
-#pragma parameter brightboost "Bright boost" 1.2 0.5 2.0 0.05
-#pragma parameter sat "Saturation adjustment" 1.2 0.0 2.0 0.05
-#pragma parameter glow "Glow Strength" 0.35 0.0 1.0 0.01
+#pragma parameter vignette "Vignette On/Off" 0.0 0.0 1.0 1.0
+#pragma parameter gamma_out "Gamma out" 2.3 1.0 4.0 0.1
+#pragma parameter brightboost "Bright boost" 1.0 0.5 2.0 0.05
+#pragma parameter sat "Saturation adjustment" 1.0 0.0 2.0 0.05
+#pragma parameter glow "Glow Strength" 0.0 0.0 1.0 0.01
 #pragma parameter gdv_hires "Average lines from this height (0: never)" 0.0 0.0 1200.0 1.0
 #if defined(VERTEX)
 #if __VERSION__ >= 130
@@ -175,18 +189,18 @@ uniform float scanline, beam_min, beam_max, h_sharp, shadowMask, thres, masksize
 #else
 #define scanline 10.0
 #define beam_min 1.5
-#define beam_max 2.0
+#define beam_max 2.5
 #define h_sharp 2.5
-#define shadowMask 11.0
+#define shadowMask -1.0
 #define thres 0.4
 #define masksize 1.0
 #define maskDark 0.0
 #define CGWG 1.0
-#define vignette 1.0
-#define gamma_out 2.2
-#define brightboost 1.2
-#define sat 1.2
-#define glow 0.35
+#define vignette 0.0
+#define gamma_out 2.3
+#define brightboost 1.0
+#define sat 1.0
+#define glow 0.0
 #define gdv_hires 0.0
 #endif
 
@@ -232,7 +246,8 @@ vec3 glow0(vec2 t, vec2 b)
 void main()
 {
     vec2 ps = 1.0 / TextureSize;
-    vec2 OGL2Pos = TEX0.xy * TextureSize;
+    // the beam centered on each line, the colour on each pixel; a quarter line off at under 3 rows a line ([slang])
+    vec2 OGL2Pos = TEX0.xy * TextureSize - vec2(0.5, OutputSize.y / InputSize.y < 3.0 ? 0.25 : 0.5);
     vec2 fp = fract(OGL2Pos);
     vec2 pC4 = floor(OGL2Pos) * ps + 0.5 * ps;
     vec2 dx = vec2(ps.x, 0.0);
@@ -264,7 +279,7 @@ void main()
     color = min(color, 1.0);
     float lum = dot(color, vec3(0.3, 0.6, 0.1));
     color = pow(color, vec3(1.0 / gamma_out));
-    color += glow0(pC4, ps);
+    if (glow > 0.0) color += glow0(pC4, ps);
     color *= mix(1.0, brightboost, lum);
     color = saturation(color);
 
@@ -279,29 +294,45 @@ void main()
 """.trimStart()
 
     /**
-     * The CRT for GameCube and Wii, in Dolphin's shader dialect: the picture as a television of their day showed it.
-     * Both consoles send 480 lines. GDV's mask and full-strength lines read as a fine black mesh at that count, and lines
-     * every four panel rows are the spacing of the older 240-line consoles, not these. So: a gap between the 480 lines,
-     * deepest in dark parts as a bright line spreads over it; on this panel's 960 rows that is one row of line and one
-     * of gap, and on a television the spacing is rounded to whole rows so the lines never beat against the screen's.
-     * Over it an aperture grille, a red, a green and a blue stripe on three panel columns (a Trinitron's, the sets these
-     * consoles mostly met), not a black column; glow; darker corners. [Tv480.slang] is the same for PlayStation 2.
+     * The CRT for GameCube and Wii, in Dolphin's shader dialect: the picture as a television of their day showed it
+     * ([Tv480.body], shared with PlayStation 2). GDV's mask and full-strength lines read as a fine black mesh at 480
+     * lines, and an earlier 480-line television with an aperture grille worked on gamma-encoded values, which made its
+     * gaps two to three times deeper than a set's and clipped white. The true picture (2026-11-02): both consoles sent 480 lines
+     * interlaced through a composite cable, whose fields fill each other's gaps on a set, leaving a faint line structure
+     * deepest in dark parts; the tube's own 2.4 gamma; the set's colour and white. [lines] is the line structure's depth
+     * and [mask] the aperture grille's strength, both from the cable ([RetroPack.tvLook]); [signal] and [white] as
+     * Settings, Picture.
      */
-    val dolphin = """
-// Timeline TV for Dolphin: 480 lines and an aperture grille, as a television showed GameCube and Wii.
-// Written for Timeline by NOSTOS. Its corner darkening follows GDV Mini Ultra's (Copyright (C) 2017-2018 guest(r),
-// GNU General Public License, version 2 or later). Timeline is under the GNU General Public License, version 3 or later.
+    fun dolphin(lines: Double, signal: Int, white: String, mask: Double): String = """
+// Timeline TV for Dolphin: GameCube and Wii as a television showed them.
+// Written for Timeline by NOSTOS. Timeline is under the GNU General Public License, version 3 or later.
 
 /*
 [configuration]
 
 [OptionRangeFloat]
-GUIName = Line gaps
+GUIName = Line structure
 OptionName = lines
 MinValue = 0.0
 MaxValue = 0.9
 StepAmount = 0.05
-DefaultValue = 0.5
+DefaultValue = $lines
+
+[OptionRangeFloat]
+GUIName = Signal: 0 component, 1 S-video, 2 composite
+OptionName = signal
+MinValue = 0.0
+MaxValue = 2.0
+StepAmount = 1.0
+DefaultValue = $signal.0
+
+[OptionRangeFloat]
+GUIName = White: 0 6500K, 1 7500K, 2 8000K, 3 9300K
+OptionName = white
+MinValue = 0.0
+MaxValue = 3.0
+StepAmount = 1.0
+DefaultValue = $white
 
 [OptionRangeFloat]
 GUIName = Aperture grille
@@ -309,15 +340,7 @@ OptionName = mask
 MinValue = 0.0
 MaxValue = 0.6
 StepAmount = 0.02
-DefaultValue = 0.3
-
-[OptionRangeFloat]
-GUIName = Glow
-OptionName = halo
-MinValue = 0.0
-MaxValue = 1.0
-StepAmount = 0.01
-DefaultValue = 0.3
+DefaultValue = $mask
 
 [OptionRangeFloat]
 GUIName = Saturation
@@ -325,54 +348,28 @@ OptionName = colour
 MinValue = 0.0
 MaxValue = 2.0
 StepAmount = 0.05
-DefaultValue = 1.08
+DefaultValue = 1.0
 
 [/configuration]
 */
 
-float3 tex(float2 uv)
+float3 TEX(float2 uv)
 {
     return SampleLocation(src_rect.xy + src_rect.zw * clamp(uv, float2(0.0, 0.0), float2(1.0, 1.0))).rgb;
 }
-
+#define PICSIZE (src_rect.zw * GetResolution())
+#define OPT_LINES GetOption(lines)
+#define OPT_SIGNAL GetOption(signal)
+#define OPT_WHITE GetOption(white)
+#define OPT_MASK GetOption(mask)
+#define OPT_SAT GetOption(colour)
+${Tv480.body}
 void main()
 {
     float2 uv = (GetCoordinates() - src_rect.xy) / src_rect.zw;
-    float3 c = tex(uv);
-
-    // Light spreading from bright parts, let in only where it is brighter than what is there.
-    float2 px = 1.0 / (GetResolution() * src_rect.zw);         // one pixel of the picture Dolphin hands over
-    float2 d = px * 2.0;
-    float3 blur = (tex(uv + float2(d.x, 0.0)) + tex(uv - float2(d.x, 0.0)) + tex(uv + float2(0.0, d.y)) + tex(uv - float2(0.0, d.y))) * 0.15
-        + (tex(uv + d) + tex(uv - d) + tex(uv + float2(d.x, -d.y)) + tex(uv + float2(-d.x, d.y))) * 0.1;
-    c = mix(c, max(c, blur), GetOption(halo));
-    float lum = dot(c, float3(0.3, 0.6, 0.1));
-
-    // The 480 lines. How many screen rows one line covers, from how far the picture moves per row; rounded to whole
-    // rows (at least two). The last row of each line is the gap, darkest in dark parts; the rest are lifted to make up
-    // most of the light the gap takes.
+    // How many screen rows one of the 480 lines covers, from how far the picture moves per row.
     float rows = abs(src_rect.w / max(abs(dFdy(GetCoordinates().y)), 0.000001)) / 480.0;
-    float n = max(2.0, floor(rows + 0.5));
-    float k = mod(floor(gl_FragCoord.y), n);
-    float gap = GetOption(lines) * (1.0 - 0.6 * lum);
-    float lift = 1.0 / (1.0 - 0.6 * gap / n);
-    c *= (k > n - 1.5) ? (1.0 - gap) * lift : lift;
-
-    // The aperture grille: one panel column each for red, green and blue, the other two colors let through less,
-    // a little less so in bright parts. Lifted so the grille darkens nothing on average.
-    float m = GetOption(mask) * (1.0 - 0.5 * lum);
-    float col = mod(floor(gl_FragCoord.x), 3.0);
-    float3 stripe = col < 0.5 ? float3(1.0, 1.0 - m, 1.0 - m) : (col < 1.5 ? float3(1.0 - m, 1.0, 1.0 - m) : float3(1.0 - m, 1.0 - m, 1.0));
-    c *= stripe * (3.0 / (3.0 - 2.0 * m));
-
-    float grey = dot(c, float3(0.3, 0.6, 0.1));
-    c = mix(float3(grey, grey, grey), c, GetOption(colour));
-
-    // A tube's corners a touch darker.
-    float2 v = uv * (1.0 - uv);
-    c *= min(pow(v.x * v.y * 45.0, 0.12), 1.0);
-
-    SetOutput(float4(clamp(c, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0)), 1.0));
+    SetOutput(float4(tv(uv, gl_FragCoord.xy, rows), 1.0));
 }
 """.trimStart()
 }
@@ -387,7 +384,8 @@ object Tv480 {
     const val SLANG = "timeline-tv.slang"
     const val PRESET = "timeline-crt.slangp"
 
-    val preset = """
+    /** ARMSX2's preset: [lines], [signal], [white] and [mask] as for [Crt3d.dolphin]. */
+    fun preset(lines: Double, signal: Int, white: String, mask: Double) = """
 shaders = "1"
 shader0 = "$SLANG"
 filter_linear0 = "true"
@@ -395,13 +393,79 @@ wrap_mode0 = "clamp_to_edge"
 mipmap_input0 = "false"
 scale_type0 = "viewport"
 scale0 = "1.000000"
+tv_lines = "$lines"
+tv_signal = "$signal.0"
+tv_white = "$white"
+tv_mask = "$mask"
 """.trimStart()
+
+    /**
+     * The 480-line television, shared by PlayStation 2 (as a slang shader) and GameCube and Wii (Dolphin's dialect), in
+     * one pass, since neither emulator is known to take more. In order, as in the set: the signal ([Signal]'s softening,
+     * measured in a 320-pixel line so every console meets the same set), the set's phosphors and white ([Colour]), the
+     * tube's 2.4 gamma, then a faint line structure in light, deepest in dark parts, as a set's interlaced fields left
+     * it. Nothing is lifted, so nothing clips. Needs TEX(uv), PICSIZE (the picture's size in its own pixels) and the OPT_
+     * names defined first.
+     */
+    val body = """
+const mat3 toYIQ = mat3(0.299, 0.596, 0.211, 0.587, -0.274, -0.523, 0.114, -0.322, 0.312);
+const mat3 toRGB = mat3(1.0, 1.0, 1.0, 0.956, -0.272, -1.106, 0.621, -0.647, 1.703);
+const mat3 W6500 = mat3(0.93954, 0.01777, -0.00162,   0.05018, 0.96579, -0.00437,   0.01028, 0.01643, 1.00599);
+const mat3 W7500 = mat3(0.79920, 0.01712,  0.00122,   0.01097, 0.85092,  0.00565,   0.00212, 0.01223, 0.99313);
+const mat3 W8000 = mat3(0.74958, 0.01679,  0.00224,  -0.00131, 0.80881,  0.00928,  -0.00070, 0.01069, 0.98849);
+const mat3 W9300 = mat3(0.65840, 0.01604,  0.00411,  -0.02173, 0.72941,  0.01607,  -0.00579, 0.00776, 0.97982);
+mat3 whiteOf(float w) { return w < 0.5 ? W6500 : (w < 1.5 ? W7500 : (w < 2.5 ? W8000 : W9300)); }
+
+// The picture sampled pixel by pixel, blended only in the third of a pixel at each edge: at a screen's exact two
+// rows and columns a pixel, each line and column is drawn whole, as a progressive picture's were; the sampler's own
+// interpolation would soften every one.
+float3 SRC(float2 uv)
+{
+    float2 p = uv * PICSIZE - 0.5;
+    float2 i = floor(p);
+    float2 f = clamp((p - i - 0.5) * 3.0 + 0.5, 0.0, 1.0);
+    return TEX((i + 0.5 + f) / PICSIZE);
+}
+
+float3 tv(float2 uv, float2 frag, float rows)
+{
+    float3 c = SRC(uv);
+    if (OPT_SIGNAL > 0.5) {
+        float one = 1.0 / 320.0;
+        bool composite = OPT_SIGNAL > 1.5;
+        float sigma = 1.3 * one * (composite ? 1.25 : 1.0);
+        float2 iq = float2(0.0, 0.0);
+        float sum = 0.0;
+        for (int k = -6; k <= 6; k++) {
+            float w = exp(-0.125 * float(k * k));
+            iq += w * (toYIQ * SRC(uv + float2(float(k) * 0.5 * sigma, 0.0))).yz;
+            sum += w;
+        }
+        iq /= sum;
+        float side = composite ? 0.25 : 0.1;
+        float y = (toYIQ * c).x * (1.0 - 2.0 * side) + ((toYIQ * SRC(uv - float2(one, 0.0))).x + (toYIQ * SRC(uv + float2(one, 0.0))).x) * side;
+        c = clamp(toRGB * float3(y, iq), 0.0, 1.0);
+    }
+    c = clamp(whiteOf(OPT_WHITE) * pow(c, float3(2.2, 2.2, 2.2)), 0.0, 1.0);
+    float3 light = pow(c, float3(2.4 / 2.2, 2.4 / 2.2, 2.4 / 2.2));
+    float lum = dot(light, float3(0.2126, 0.7152, 0.0722));
+    float f = fract(frag.y / max(rows, 1.0));
+    float depth = OPT_LINES * (1.0 - 0.5 * lum);
+    light *= 1.0 - depth * (0.5 - 0.5 * cos(6.2831853 * (f - 0.25)));
+    if (OPT_MASK > 0.0) {
+        float m = OPT_MASK;
+        float col = mod(floor(frag.x), 3.0);
+        light *= col < 0.5 ? float3(1.0, 1.0 - m, 1.0 - m) : (col < 1.5 ? float3(1.0 - m, 1.0, 1.0 - m) : float3(1.0 - m, 1.0 - m, 1.0));
+    }
+    light = mix(float3(lum, lum, lum), light, OPT_SAT);
+    return pow(clamp(light, 0.0, 1.0), float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
+}
+"""
 
     val slang = """
 #version 450
-// Timeline TV: 480 lines and an aperture grille, as a television showed PlayStation 2.
-// Written for Timeline by NOSTOS. Its corner darkening follows GDV Mini Ultra's (Copyright (C) 2017-2018 guest(r),
-// GNU General Public License, version 2 or later). Timeline is under the GNU General Public License, version 3 or later.
+// Timeline TV: PlayStation 2 as a television showed it. Written for Timeline by NOSTOS.
+// Timeline is under the GNU General Public License, version 3 or later.
 
 layout(push_constant) uniform Push
 {
@@ -410,15 +474,17 @@ layout(push_constant) uniform Push
     vec4 OutputSize;
     uint FrameCount;
     float tv_lines;
+    float tv_signal;
+    float tv_white;
     float tv_mask;
-    float tv_glow;
     float tv_sat;
 } params;
 
-#pragma parameter tv_lines "Line gaps" 0.5 0.0 0.9 0.05
-#pragma parameter tv_mask "Aperture grille" 0.3 0.0 0.6 0.02
-#pragma parameter tv_glow "Glow" 0.3 0.0 1.0 0.01
-#pragma parameter tv_sat "Saturation" 1.1 0.0 2.0 0.05
+#pragma parameter tv_lines "Line structure" 0.25 0.0 0.9 0.05
+#pragma parameter tv_signal "Signal: 0 component, 1 S-video, 2 composite" 2.0 0.0 2.0 1.0
+#pragma parameter tv_white "White: 0 6500K, 1 7500K, 2 8000K, 3 9300K" 2.0 0.0 3.0 1.0
+#pragma parameter tv_mask "Aperture grille" 0.0 0.0 0.6 0.02
+#pragma parameter tv_sat "Saturation" 1.0 0.0 2.0 0.05
 
 layout(std140, set = 0, binding = 0) uniform UBO
 {
@@ -441,38 +507,20 @@ layout(location = 0) in vec2 vTexCoord;
 layout(location = 0) out vec4 FragColor;
 layout(set = 0, binding = 2) uniform sampler2D Source;
 
-vec3 tex(vec2 uv) { return texture(Source, clamp(uv, vec2(0.0), vec2(1.0))).rgb; }
-
+#define float2 vec2
+#define float3 vec3
+#define float4 vec4
+vec3 TEX(vec2 uv) { return texture(Source, clamp(uv, vec2(0.0), vec2(1.0))).rgb; }
+#define PICSIZE params.SourceSize.xy
+#define OPT_LINES params.tv_lines
+#define OPT_SIGNAL params.tv_signal
+#define OPT_WHITE params.tv_white
+#define OPT_MASK params.tv_mask
+#define OPT_SAT params.tv_sat
+$body
 void main()
 {
-    vec2 uv = vTexCoord;
-    vec3 c = tex(uv);
-
-    // Glow, about two of the console's own pixels out.
-    vec2 d = vec2(1.0 / 320.0, 1.0 / 240.0);
-    vec3 blur = (tex(uv + vec2(d.x, 0.0)) + tex(uv - vec2(d.x, 0.0)) + tex(uv + vec2(0.0, d.y)) + tex(uv - vec2(0.0, d.y))) * 0.15
-        + (tex(uv + d) + tex(uv - d) + tex(uv + vec2(d.x, -d.y)) + tex(uv + vec2(-d.x, d.y))) * 0.1;
-    c = mix(c, max(c, blur), params.tv_glow);
-    float lum = dot(c, vec3(0.3, 0.6, 0.1));
-
-    // 480 lines on the screen's rows: rounded to whole rows per line, at least two; the last row of each is the gap.
-    float n = max(2.0, floor(params.OutputSize.y / 480.0 + 0.5));
-    float k = mod(floor(gl_FragCoord.y), n);
-    float gap = params.tv_lines * (1.0 - 0.6 * lum);
-    float lift = 1.0 / (1.0 - 0.6 * gap / n);
-    c *= (k > n - 1.5) ? (1.0 - gap) * lift : lift;
-
-    // The aperture grille: red, green and blue stripes, one screen column each.
-    float m = params.tv_mask * (1.0 - 0.5 * lum);
-    float col = mod(floor(gl_FragCoord.x), 3.0);
-    vec3 stripe = col < 0.5 ? vec3(1.0, 1.0 - m, 1.0 - m) : (col < 1.5 ? vec3(1.0 - m, 1.0, 1.0 - m) : vec3(1.0 - m, 1.0 - m, 1.0));
-    c *= stripe * (3.0 / (3.0 - 2.0 * m));
-
-    float grey = dot(c, vec3(0.3, 0.6, 0.1));
-    c = mix(vec3(grey), c, params.tv_sat);
-    vec2 v = uv * (1.0 - uv);
-    c *= min(pow(v.x * v.y * 45.0, 0.12), 1.0);
-    FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    FragColor = vec4(tv(vTexCoord, gl_FragCoord.xy, params.OutputSize.y / 480.0), 1.0);
 }
 """.trimStart()
 }
@@ -766,5 +814,182 @@ void main()
     FragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }
 #endif
+""".trimStart()
+}
+
+/**
+ * The television's own colour, between the signal and the tube: a picture's RGB read as an American set's phosphors
+ * (SMPTE-C, the P22 set consumer tubes used from the 1970s on) and shown at that set's white, on this sRGB panel.
+ * Sets were sold far bluer than the broadcast standard's 6500 K: a 1993 survey of American receivers found 5,700 K to
+ * 13,700 K, averaging 8,000 K (Donofrio, Hess and Sember, "The White Color of Television Receivers"), and Japanese
+ * sets and monitors ran at 9,300 K. Each matrix maps linear SMPTE-C to linear sRGB, Bradford-adapted from 6500 K to
+ * that white, and is scaled so white's largest channel is exactly 1, so nothing clips. Worked in 2.2-power light,
+ * which for matrices this close to diagonal differs from the tube's own curve by well under one just-noticeable step.
+ * Written for Timeline by NOSTOS (2026-11-02).
+ */
+object Colour {
+    const val SLANG = "timeline-colour.slang"
+    const val GLSL = "timeline-colour.glsl"
+
+    private const val MATRICES = """
+const mat3 W6500 = mat3(0.93954, 0.01777, -0.00162,   0.05018, 0.96579, -0.00437,   0.01028, 0.01643, 1.00599);
+const mat3 W7500 = mat3(0.79920, 0.01712,  0.00122,   0.01097, 0.85092,  0.00565,   0.00212, 0.01223, 0.99313);
+const mat3 W8000 = mat3(0.74958, 0.01679,  0.00224,  -0.00131, 0.80881,  0.00928,  -0.00070, 0.01069, 0.98849);
+const mat3 W9300 = mat3(0.65840, 0.01604,  0.00411,  -0.02173, 0.72941,  0.01607,  -0.00579, 0.00776, 0.97982);
+mat3 white(float w) { return w < 0.5 ? W6500 : (w < 1.5 ? W7500 : (w < 2.5 ? W8000 : W9300)); }
+"""
+
+    val slang = """
+#version 450
+// Timeline colour: an American set's phosphors (SMPTE-C) and white point, shown on an sRGB panel. Written for Timeline by NOSTOS.
+
+layout(push_constant) uniform Push
+{
+    vec4 SourceSize;
+    vec4 OriginalSize;
+    vec4 OutputSize;
+    uint FrameCount;
+    float tl_white;
+} params;
+
+#pragma parameter tl_white "White: 0 6500K, 1 7500K, 2 8000K, 3 9300K" 2.0 0.0 3.0 1.0
+
+layout(std140, set = 0, binding = 0) uniform UBO
+{
+    mat4 MVP;
+} global;
+
+#pragma stage vertex
+layout(location = 0) in vec4 Position;
+layout(location = 1) in vec2 TexCoord;
+layout(location = 0) out vec2 vTexCoord;
+
+void main()
+{
+    gl_Position = global.MVP * Position;
+    vTexCoord = TexCoord;
+}
+
+#pragma stage fragment
+layout(location = 0) in vec2 vTexCoord;
+layout(location = 0) out vec4 FragColor;
+layout(set = 0, binding = 2) uniform sampler2D Source;
+$MATRICES
+void main()
+{
+    vec3 c = pow(texture(Source, vTexCoord).rgb, vec3(2.2));
+    FragColor = vec4(pow(clamp(white(params.tl_white) * c, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+}
+""".trimStart()
+
+    val glsl = """
+// Timeline colour: an American set's phosphors (SMPTE-C) and white point, shown on an sRGB panel, in RetroArch's GLSL. Written for Timeline by NOSTOS.
+#pragma parameter tl_white "White: 0 6500K, 1 7500K, 2 8000K, 3 9300K" 2.0 0.0 3.0 1.0
+#if defined(VERTEX)
+#if __VERSION__ >= 130
+#define COMPAT_VARYING out
+#define COMPAT_ATTRIBUTE in
+#else
+#define COMPAT_VARYING varying
+#define COMPAT_ATTRIBUTE attribute
+#endif
+COMPAT_ATTRIBUTE vec4 VertexCoord;
+COMPAT_ATTRIBUTE vec4 TexCoord;
+COMPAT_VARYING vec4 TEX0;
+uniform mat4 MVPMatrix;
+void main()
+{
+    gl_Position = MVPMatrix * VertexCoord;
+    TEX0.xy = TexCoord.xy;
+}
+#elif defined(FRAGMENT)
+#ifdef GL_ES
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+#endif
+#if __VERSION__ >= 130
+#define COMPAT_VARYING in
+#define COMPAT_TEXTURE texture
+out vec4 FragColor;
+#else
+#define COMPAT_VARYING varying
+#define FragColor gl_FragColor
+#define COMPAT_TEXTURE texture2D
+#endif
+uniform sampler2D Texture;
+COMPAT_VARYING vec4 TEX0;
+#ifdef PARAMETER_UNIFORM
+uniform float tl_white;
+#else
+#define tl_white 2.0
+#endif
+$MATRICES
+void main()
+{
+    vec3 c = pow(COMPAT_TEXTURE(Texture, TEX0.xy).rgb, vec3(2.2));
+    FragColor = vec4(pow(clamp(white(tl_white) * c, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+}
+#endif
+""".trimStart()
+}
+
+/**
+ * The Genesis's colour levels. Its video chip turns each 3-bit level (15 with shadow and highlight) into a voltage
+ * through a converter that is not linear: the dark levels come out markedly brighter than an even ramp. Genesis Plus GX
+ * hands over the even ramp (0, 33, 66, 99, 140, 173, 206, 239). This pass reads each level back exactly and puts the
+ * measured one in its place: BlastEm's table from voltage measurements on the console (Genesis Plus GX issue 345:
+ * 0, 27, 49, 71, 87, 103, 119, 130, 146, 157, 174, 190, 206, 228, 255), scaled so the top stays at the core's 239,
+ * since only the shape was measured. Normal levels are entries 0, 2 ... 14, shadow 0 to 7, highlight 7 to 14. For the
+ * Genesis's own mode only: the Master System and Game Gear use different levels and do not get it.
+ * Written for Timeline by NOSTOS (2026-11-02).
+ */
+object GenesisDac {
+    const val SLANG = "timeline-genesis-dac.slang"
+
+    val slang = """
+#version 450
+// Timeline: the Genesis's measured colour levels (BlastEm's DAC table) for Genesis Plus GX. Written for Timeline by NOSTOS.
+
+layout(push_constant) uniform Push
+{
+    vec4 SourceSize;
+    vec4 OriginalSize;
+    vec4 OutputSize;
+    uint FrameCount;
+} params;
+
+layout(std140, set = 0, binding = 0) uniform UBO
+{
+    mat4 MVP;
+} global;
+
+#pragma stage vertex
+layout(location = 0) in vec4 Position;
+layout(location = 1) in vec2 TexCoord;
+layout(location = 0) out vec2 vTexCoord;
+
+void main()
+{
+    gl_Position = global.MVP * Position;
+    vTexCoord = TexCoord;
+}
+
+#pragma stage fragment
+layout(location = 0) in vec2 vTexCoord;
+layout(location = 0) out vec4 FragColor;
+layout(set = 0, binding = 2) uniform sampler2D Source;
+
+const float L[15] = float[15](0.0, 27.0, 49.0, 71.0, 87.0, 103.0, 119.0, 130.0, 146.0, 157.0, 174.0, 190.0, 206.0, 228.0, 255.0);
+
+void main()
+{
+    vec3 c = texture(Source, vTexCoord).rgb;
+    // Genesis Plus GX's 15 levels, from either of its pixel formats, read back exactly as 0 to 14.
+    ivec3 k = clamp(ivec3(floor(c * 15.0 + 0.5)), ivec3(0), ivec3(14));
+    FragColor = vec4(vec3(L[k.r], L[k.g], L[k.b]) * (239.0 / 255.0) / 255.0, 1.0);
+}
 """.trimStart()
 }
