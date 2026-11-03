@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.7.0
+
+- **GoldenEye 007 and Perfect Dark on two sticks.** With one controller in hand, the left stick walks and strafes,
+  the right stick looks, L2 aims and R2 fires, as a modern shooter plays. Both games have a style for two
+  controllers, one in each hand (2.4, GoldenEye's Goodhead), and Timeline drives both from the one pad. Choose it once
+  in the game, with Look Up/Down set to Upright in GoldenEye or Reverse Pitch unchecked in Perfect Dark, since both
+  start with up and down the flight-stick way; each game's page says where. With a second player's controller
+  connected, both keep their usual controls.
+- **A finer stick for both.** The dead zone is 5% instead of 15%, and the stick reaches further on its diagonals, so
+  turning while looking up or down no longer drags.
+- **Less slowdown.** The console's processor runs at four times its speed for GoldenEye and twice for Perfect Dark.
+  From the same 15 seconds of play, GoldenEye went from 39.5 pictures a second to 57.2 and Perfect Dark from 41.8 to
+  45.6, with none late on the screen.
+- **GoldenEye's menus without flicker.** Its watch reads the game's picture back for the background behind it, and at
+  eight times one picture in seven came late. GoldenEye is drawn at four times, as Pokemon Snap is.
+- **Modern controls are a setting.** **Settings, Controls, Nintendo 64 shooters: modern controls** is on to start
+  with. Off gives GoldenEye, Perfect Dark, both Turoks and Sin and Punishment the console's own controls.
+- **Dreamcast games at 30 a second play evenly.** Jet Grind Radio, MDK2, Shenmue and the others that draw 30 pictures
+  a second no longer judder: RetroArch is told their rate, so each picture is held for the same time. Jet Grind Radio
+  went from 45% of its pictures late to none.
+
 ## 1.6.0
 
 - **The sharper look is the default.** The 3D consoles are drawn at the largest whole multiple each keeps smooth on a

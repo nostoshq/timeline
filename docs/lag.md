@@ -57,3 +57,19 @@ Most Nintendo 64 games draw fewer than 60 pictures a second: Ocarina of Time 20,
 black frame insertion on, the emulator has to hand over a picture at every one of the console's 60 refreshes,
 repeated if need be, or the black frame stays up for 25 to 40 ms at a time. Timeline has the core repeat its last
 picture on those refreshes. In a demanding game the measured gaps went from 205 in ten seconds to none.
+
+## Even pictures on the Dreamcast
+
+Some Dreamcast games draw 30 pictures a second: Jet Grind Radio, MDK2, Shenmue, Tony Hawk's Pro Skater 2. Unless
+RetroArch is told so, the repeated frames between two pictures go unshown and RetroArch loses its place against the
+screen, so pictures stay up for two to five refreshes at random. Timeline turns on Flycast's **Detect frame rate
+changes**, and each picture is held for the same time. In Jet Grind Radio the late pictures went from 45% to none;
+Sonic Adventure 2 and Crazy Taxi, at 60 a second, were the same with it as without.
+
+## Less slowdown in GoldenEye and Perfect Dark
+
+Both games slow down when the scene gets busy, as they did on the console. Timeline runs the console's processor at
+four times its speed for GoldenEye and twice for Perfect Dark, which keeps its pace better at twice than at four.
+From the same 15 seconds of turning, counted with each game's own frame counter, GoldenEye went from 39.5 pictures a
+second to 57.2 and Perfect Dark from 41.8 to 45.6, with none late on the screen. Both still run on the console's 60
+refreshes a second, which they time themselves by.

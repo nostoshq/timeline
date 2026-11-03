@@ -1108,6 +1108,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         integer = prefs.bool("ra.integer", true), sharp = prefs.bool("ra.sharp", true), saturation = prefs.int("ra.saturation", 100),
         white = prefs.str("ra.white", RetroPack.whiteChoices.first()).takeIf { it in RetroPack.whiteChoices } ?: RetroPack.whiteChoices.first(),
         crt3d = prefs.bool("ra.crt3d", true), reconnectByName = padNamesDiffer(),
+        n64Modern = prefs.bool("ra.n64modern", true), onePlayer = Players.onePlayer(pads(), tvDisplays().isNotEmpty()),
         signal = RetroPack.signals.keys.mapNotNull { g -> prefs.str("ra.signal.$g").takeIf { it.isNotEmpty() }?.let { g to it } }.toMap(),
         compatible = prefs.str("ra.draw", "Vulkan") == "Compatible", dolphinGl = prefs.str("dol.draw", "Vulkan") == "OpenGL",
         dolphinPad = prefs.bool("dol.pad", true),

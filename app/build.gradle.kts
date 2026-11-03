@@ -17,8 +17,8 @@ android {
         applicationId = "market.nostos.timeline"
         minSdk = 29
         targetSdk = 34
-        versionCode = 160
-        versionName = "1.6.0"
+        versionCode = 170
+        versionName = "1.7.0"
     }
     // Release builds are signed only when a keystore.properties file sits beside this project (it is never committed):
     //   storeFile=timeline-release.jks

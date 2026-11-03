@@ -1856,6 +1856,14 @@ object Players {
         return (listOf(own + others.take(1)) + others.drop(1).map { listOf(it) }).take(4)
     }
 
+    /**
+     * Only one person can be playing: at most one controller in hand, counting the handheld's own controls only away
+     * from a television (docked, nobody holds them). The handheld alone, or docked with one controller: one player. Two
+     * controllers, or one beside the handheld's own controls in the hand: a second player may be there.
+     */
+    fun onePlayer(pads: List<Pad>, tv: Boolean): Boolean =
+        pads.count { !isOwn(it) } + (if (!tv && pads.any(::isOwn)) 1 else 0) <= 1
+
     /** Dolphin's name for an Android controller, as it writes it ("Android/1/Retroid Pocket Controller"). */
     fun dolphinName(p: Pad): String = "Android/${p.number}/${p.name}"
 
@@ -1938,6 +1946,8 @@ data class Look(
     val dolphinGlCodes: Map<String, Boolean> = emptyMap(), // GameCube and Wii games drawn with OpenGL on their own (true), or no longer (false), by disc ID
     val reconnectByName: Boolean = true,               // no two connected controllers share a name (see base)
     val signal: Map<String, String> = emptyMap(),      // per console group (RetroPack.signals): the signal it reached the screen by, where changed
+    val n64Modern: Boolean = true,                     // the N64 shooters on two sticks (RetroPack.twinStick, RetroPack.dualStick)
+    val onePlayer: Boolean = true,                     // no second player's controller connected as the game starts (Players.onePlayer)
 ) {
     /** The signal a console group reaches the screen by: the one chosen, else the usual one in an American home. */
     fun signalOf(group: String): String = signal[group]?.takeIf { it in RetroPack.signals[group].orEmpty() } ?: RetroPack.signals[group]?.first() ?: "RGB"
@@ -2860,11 +2870,18 @@ object RetroPack {
      * picture on time on a Retroid Pocket Nova with its graphics chip at about a third of its most). Drawn the compatible
      * way, through OpenGL, it stays at twice. The console is told the cable chosen under Signal: VGA as through the VGA
      * box (a game that refuses it falls back to composite by itself, the core's own rule), any other as a television cable.
+     *
+     * Games that draw 30 pictures a second (Jet Grind Radio, MDK2, Tony Hawk's Pro Skater 2) are told to RetroArch as such
+     * ("Detect frame rate changes"), so each picture is held four refreshes. Without it the repeated frames between two
+     * pictures were not shown at all and RetroArch lost its place against the screen: pictures held two, three, four or
+     * five refreshes at random, 40 to 45% of them late (measured on a Retroid Pocket Nova; with it, none). Sonic
+     * Adventure 2 and Crazy Taxi, at 60, were as on time with it as without.
      */
     private fun dcSize(look: Look, sharp: Boolean) = when { !sharp -> "640x480"; look.compatible -> "1280x960"; else -> "2560x1920" }
     private fun flycast(look: Look, sharp: Boolean) = mapOf("reicast_internal_resolution" to dcSize(look, sharp), "reicast_per_content_vmus" to "VMU A1",
         "reicast_anisotropic_filtering" to if (sharp) "16" else "off",
-        "reicast_cable_type" to if (look.signalOf("dreamcast") == "VGA") "VGA" else "TV (Composite)")
+        "reicast_cable_type" to if (look.signalOf("dreamcast") == "VGA") "VGA" else "TV (Composite)",
+        "reicast_detect_vsync_swap_interval" to "enabled")
 
     /**
      * Nintendo 64 games made for the Rumble Pak that keep nothing on a Controller Pak (the core's own game list: rumble,
@@ -2904,6 +2921,14 @@ object RetroPack {
             "Blast Corps (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),
             "Mario Tennis (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),    // the last match's names left on the scoreboard (#2952)
             KI_GOLD to mapOf("mupen64plus-alt-map" to "True"),                               // every C button on a button of its own
+            // The console's processor run faster, for the two shooters' slowdown. On a Retroid Pocket Nova, from places in
+            // each game, the same 15 s of turning each time, frames counted from each game's own frame counter
+            // (GoldenEye's frametiming.c, Perfect Dark's g_Vars): GoldenEye 39.5 a second at the usual speed, 51.5 at twice,
+            // 57.2 at four times; Perfect Dark 41.8, 45.6 at twice, but 39.6 at four times (run twice each, within half a
+            // frame). Both still keep the console's 60 refreshes a second, as both games time themselves by them, and none late
+            // on the screen at these speeds.
+            "GoldenEye 007 (USA)" to mapOf("mupen64plus-CountPerOpDenomPot" to "2"),
+            "Perfect Dark (USA) (Rev 1)" to mapOf("mupen64plus-CountPerOpDenomPot" to "1"),
         )
         val shake = (1..4).associate { "mupen64plus-pak$it" to "rumble" }
         (rumbleGames + own.keys).associateWith { (if (it in rumbleGames) shake else emptyMap()) + own[it].orEmpty() }
@@ -2913,12 +2938,30 @@ object RetroPack {
      * Nintendo 64 games drawn at four times (1280 x 960) rather than eight, with their own preset bringing them back to
      * their lines (two halvings). Pokemon Snap reads its pictures back to check your photos, and at eight times a
      * third of them came late with the chip busy on a Retroid Pocket Nova; every other game measured held eight.
+     * GoldenEye's watch reads the game's picture back the same way, for the background behind it: at eight times 16% of
+     * its pictures came late, one refresh in seven missed, and the black frames between pictures slipped with them, a
+     * flicker in its menus (its levels themselves held eight with none late).
      */
-    val n64FourTimes: Set<String> = setOf("Pokemon Snap (USA)")
+    val n64FourTimes: Set<String> = setOf("Pokemon Snap (USA)", "GoldenEye 007 (USA)")
 
-    /** A game's own N64 settings: its fixes, and four times for [n64FourTimes] unless it is run lighter. */
-    private fun n64Own(stem: String, light: Boolean): Map<String, String> = n64Fixes[stem].orEmpty() +
-        if (!light && stem in n64FourTimes) mapOf("mupen64plus-43screensize" to "1280x960") else emptyMap()
+    /**
+     * GoldenEye and Perfect Dark on two sticks ([dualStick], Look.n64Modern): the core's dead zone 5% instead of 15%, and
+     * the stick 15% livelier. Both games turn and look at ((stick - 5) / 70) squared, at full speed from 75 (GoldenEye's
+     * bondview2.c, Perfect Dark's bondmove.c). The core puts a full push at 80 after taking its own dead zone away, so the
+     * first fifth of the stick's travel did nothing, and a round stick's diagonal reached only 57, against about 70 on the
+     * console's eight-sided gate: turning while looking up was slow. At 115 a diagonal reaches 65 and a full push 92, under
+     * the 100 GoldenEye's own code checks for. A Retroid Pocket Nova's sticks rest at 0, and each game keeps its
+     * own dead zone of 5.
+     */
+    val n64Aim: Map<String, String> = mapOf("mupen64plus-astick-deadzone" to "5", "mupen64plus-astick-sensitivity" to "115")
+
+    /** A game's own N64 settings: its fixes, four times for [n64FourTimes] unless it is run lighter, and [n64Aim]. */
+    private fun n64Own(stem: String, light: Boolean, look: Look): Map<String, String> = n64Fixes[stem].orEmpty() +
+        (if (!light && stem in n64FourTimes) mapOf("mupen64plus-43screensize" to "1280x960") else emptyMap()) +
+        (if (stem !in dualStick) emptyMap() else if (look.n64Modern) n64Aim else n64AimOff)
+
+    /** The core's own stick, given back in so many words: RetroArch writes every option into a game's file on leaving it. */
+    private val n64AimOff = mapOf("mupen64plus-astick-deadzone" to "15", "mupen64plus-astick-sensitivity" to "100")
 
     /**
      * Killer Instinct Gold's buttons, every player: punches on Y, X and R1 and kicks on B, A and R2, light to hard (by
@@ -2935,8 +2978,8 @@ object RetroPack {
      * Shooters made with walking on the C buttons and aiming on the stick: Turok's own layout, Turok 2's Expert one,
      * which it starts with, and Sin and Punishment's first, which moves with C-left and C-right. With the sticks swapped
      * they play as a modern shooter does, walking on the left stick and aiming with the right, with nothing to change in
-     * the game. GoldenEye and Perfect Dark are left as they are: they start with walking and turning on the one stick,
-     * which a swap would put on the right.
+     * the game. GoldenEye and Perfect Dark walk and turn on the one stick: they get [dualStick]. Only with "Nintendo 64
+     * shooters: modern controls" on (Look.n64Modern); off, the core's own.
      */
     val twinStick: Set<String> = setOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)",
         "Tsumi to Batsu - Hoshi no Keishousha (Japan)")
@@ -2956,6 +2999,60 @@ object RetroPack {
             append("input_player${player}_btn_r2 = \"12\"\n")
         }
     }
+
+    /**
+     * GoldenEye and Perfect Dark on two sticks. Both games have four styles for two controllers held
+     * one in each hand, and in their 2.4 (GoldenEye's Goodhead) the first controller's stick looks and turns and its Z
+     * aims, and the second's stick walks and strafes and its Z fires (read from both games' decompiled code: GoldenEye's
+     * bondview2.c and front.c, Perfect Dark's bondmove.c). So the one pad drives both: the right stick and L2 are the first
+     * controller's stick and Z, the left stick and R2 the second's. Neither game reads the C buttons, the d-pad, L or R in
+     * those styles, and A and B work on either controller. Crouching is the games' own: aim, and pull the walking stick back.
+     * The style is chosen once in the game's control options, and the save keeps it.
+     *
+     * Both games start with up and down looking the flight-stick way: GoldenEye's Look Up/Down is Reverse and Perfect
+     * Dark's Reverse Pitch is on (options.c and gamefile.c). The remap leaves the stick as it is, since the same stick
+     * moves the menus, so the note asks for Upright, or Reverse Pitch off, along with the style.
+     *
+     * For one player only (Look.onePlayer): both of RetroArch's first two players read the first controller pressed
+     * ([onePad]), and the second player's buttons are taken away, so a second person's controller would do nothing.
+     * With one connected the games keep a controller each, as usual.
+     */
+    val dualStick: Set<String> = setOf("GoldenEye 007 (USA)", "Perfect Dark (USA) (Rev 1)")
+
+    private val buttonNames = listOf("b", "y", "select", "start", "up", "down", "left", "right", "a", "x", "l", "r", "l2", "r2", "l3", "r3")
+    private val stickDirections = listOf("x+", "x-", "y+", "y-")
+
+    /**
+     * [dualStick]'s remap. Player 1, the first controller: [n64Buttons]'s A and B, START, Z on L2; the right stick is the
+     * console's stick (16 to 19) and the left stick nothing; R2 nothing, since it fires on the other controller and here
+     * would turn the face buttons into C buttons. Player 2, the second controller: the left stick and R2 (as Z, 12), and
+     * nothing else (-1 is RetroArch's "not mapped"). Players 3 and 4 as usual. Every line is given, as the file is merged.
+     */
+    fun n64DualStick(): String = buildString {
+        n64Buttons().lines().filter { it.isNotBlank() && !it.startsWith("input_player2_") }.forEach { append(it).append('\n') }
+        for ((i, dir) in stickDirections.withIndex()) {
+            append("input_player1_stk_l_$dir = \"-1\"\n")
+            append("input_player1_stk_r_$dir = \"${16 + i}\"\n")
+        }
+        append("input_player1_btn_l2 = \"12\"\n")
+        append("input_player1_btn_r2 = \"-1\"\n")
+        for (button in buttonNames) append("input_player2_btn_$button = \"${if (button == "r2") "12" else "-1"}\"\n")
+        for ((i, dir) in stickDirections.withIndex()) {
+            append("input_player2_stk_l_$dir = \"${16 + i}\"\n")
+            append("input_player2_stk_r_$dir = \"-1\"\n")
+        }
+    }
+
+    /**
+     * [dualStick]'s own settings: RetroArch's first two players both on the first controller pressed in the game. The
+     * reservations (base) are off for the game, since RetroArch gives a reserved controller to one player only and moves
+     * the others away; without any, it numbers controllers as they are first pressed and changes nothing.
+     */
+    val onePad: Map<String, String> = linkedMapOf(
+        "input_player1_reserved_device" to "", "input_player1_device_reservation_type" to "0",
+        "input_player2_reserved_device" to "", "input_player2_device_reservation_type" to "0",
+        "input_player1_joypad_index" to "0", "input_player2_joypad_index" to "0",
+    )
 
     fun files(look: Look, p: Paths, pal: List<Pair<String, String>> = emptyList(), arcade: List<String> = emptyList(),
               handheld: List<Pair<String, String>> = emptyList(), gb: GbLooks.Setup? = null): Map<String, String> {
@@ -3151,7 +3248,15 @@ object RetroPack {
         out["Mupen64Plus-Next/Mupen64Plus-Next.opt"] = cfg(mupen(true, n64Parallel(look)))
         out["remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp"] = n64Buttons()
         out["remaps/Mupen64Plus-Next/$KI_GOLD.rmp"] = n64Remap()
-        for (stem in twinStick) out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64TwinStick()
+        // The shooters on two sticks, with modern controls on. Off, or GoldenEye and Perfect Dark with a second player's
+        // controller connected, their files are left out, and the launcher takes away the ones it wrote before.
+        if (look.n64Modern) {
+            for (stem in twinStick) out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64TwinStick()
+            if (look.onePlayer) for (stem in dualStick) {
+                out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64DualStick()
+                out["Mupen64Plus-Next/$stem.cfg"] = out["Mupen64Plus-Next/$stem.cfg"].orEmpty() + cfg(onePad)
+            }
+        }
         out["remaps/SwanStation/SwanStation.rmp"] = dualShock(261)
         out["remaps/Beetle PSX HW/Beetle PSX HW.rmp"] = dualShock(517)
         // Link's Awakening saves only with A, B, START and SELECT together, which would close the game first: START and
@@ -3171,7 +3276,7 @@ object RetroPack {
             val sharp = look.sharp && !light
             when (system) {
                 "psx" -> { out["SwanStation/$stem.opt"] = cfg(swanstation(look, sharp, stem)); out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, sharp, stem)) }
-                "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(!light, n64Parallel(look)) + n64Own(stem, light))
+                "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(!light, n64Parallel(look)) + n64Own(stem, light, look))
                 "dreamcast" -> out["Flycast/$stem.opt"] = cfg(flycast(look, sharp) + dcFixes[stem].orEmpty())
             }
         }
@@ -3181,7 +3286,7 @@ object RetroPack {
             out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, stem))
             out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, look.sharp, stem))
         }
-        for (stem in n64Fixes.keys + n64FourTimes) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + n64Own(stem, false))
+        for (stem in n64Fixes.keys + n64FourTimes + dualStick) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + n64Own(stem, false, look))
         for ((stem, fix) in dcFixes) if ("dreamcast/$stem" !in look.lighter) out["Flycast/$stem.opt"] = cfg(flycast(look, look.sharp) + fix)
         // Rayman 2 does not start with achievements on (flycast #2566): that one game goes without them.
         out["Flycast/Rayman 2 - The Great Escape (USA) (En,Fr,De,Es,It).cfg"] = cfg(mapOf("cheevos_enable" to "false"))
@@ -3875,8 +3980,6 @@ object ControlsNote {
     private val retroOwn: Map<String, Map<String, String>> = run {
         val stadium = "Rental Pokémon play as normal. The GB Tower and your own Game Boy Pokémon need a Transfer Pak, which is not set up here."
         val noRumble = "No rumble: its saves are on the Controller Pak, which takes the slot, as on the console."
-        // Its own controls (RetroPack.twinStick), in place of the core's.
-        val twin = "A and B are the console's A and B. Move with the left stick and aim with the right; R2 and L2 are Z, which fires."
         val threeD = "SELECT switches the 3D Control Pad between analog and digital."
         val sun = "R3 and L3 turn the sun up and down."
         mapOf(
@@ -3891,8 +3994,7 @@ object ControlsNote {
                 "star wars - shadows of the empire" to "The space levels have a plain black sky, without their stars.",
                 "kirby 64 - the crystal shards" to "The health display can lag behind, and can lose its frame when you come back to a kept place.",
             ) + listOf("beetle adventure racing!", "goemon's great adventure", "mystical ninja starring goemon", "nfl blitz 2000",
-                "san francisco rush 2049", "snowboard kids").associateWith { noRumble } +
-                mapOf("turok - dinosaur hunter" to twin, "turok 2 - seeds of evil" to "$twin $noRumble", "tsumi to batsu - hoshi no keishousha" to twin),
+                "san francisco rush 2049", "snowboard kids", "turok 2 - seeds of evil").associateWith { noRumble },
             "nes" to mapOf(
                 "super mario bros. + duck hunt + world class track meet" to "Duck Hunt: touch the screen to shoot; docked, the second pad plays Luigi instead. " +
                     "World Class Track Meet needs the Power Pad mat, which cannot be used here.",
@@ -3914,9 +4016,20 @@ object ControlsNote {
                     "Moving between rooms takes a few seconds in this emulator."),
         )
     }
-    /** Games whose own note takes the place of the core's (their buttons are their own: RetroPack.n64Remap, RetroPack.twinStick). */
-    private val ownButtons = setOf("n64" to "killer instinct gold", "n64" to "turok - dinosaur hunter", "n64" to "turok 2 - seeds of evil",
-        "n64" to "tsumi to batsu - hoshi no keishousha")
+    /**
+     * The N64 shooters' notes with modern controls on (RetroPack.twinStick, RetroPack.dualStick), in place of the core's.
+     * GoldenEye and Perfect Dark's two-player exception is told on the setting itself: a game page has six lines.
+     */
+    private val modernOwn: Map<String, String> = run {
+        val twin = "A and B are the console's A and B. Move with the left stick and aim with the right; R2 and L2 are Z, which fires."
+        val two = "The left stick walks and strafes, the right stick looks, L2 aims and R2 fires; A and B are the console's. Aim and pull back to crouch."
+        mapOf("turok - dinosaur hunter" to twin, "turok 2 - seeds of evil" to twin, "tsumi to batsu - hoshi no keishousha" to twin,
+            "goldeneye 007" to "Once, on the watch: style 2.4 Goodhead and Look Up/Down Upright; the save keeps them. $two The right stick moves the menus.",
+            "perfect dark" to "Once, in Control Options: style 2.4 and Reverse Pitch unchecked; your agent file keeps them. $two")
+    }
+
+    /** Games whose own note always takes the place of the core's (their buttons are their own: RetroPack.n64Remap). */
+    private val ownButtons = setOf("n64" to "killer instinct gold")
 
     private val doing = mapOf(
         "RetroArch menu" to "opens RetroArch's menu", "Fast-forward (hold)" to "fast-forwards while held",
@@ -3927,14 +4040,17 @@ object ControlsNote {
     /**
      * [emulator] is the id the game opens in; [dolphinLayout] whether the launcher sets Dolphin's controls; [extras]
      * what M1 and M2 do on this system when they have been taught, or null; [keeps] whether Keep your place is on;
-     * [screens] the looks L1 and R1 change between, for a Game Boy game that has them.
+     * [screens] the looks L1 and R1 change between, for a Game Boy game that has them; [modern] whether the N64
+     * shooters get their modern controls (Look.n64Modern, with the launcher setting RetroArch up).
      */
     fun of(system: String, base: String, emulator: String, dolphinLayout: Boolean, extras: Pair<String, String>?, keeps: Boolean = true,
-           screens: List<String>? = null): String {
+           screens: List<String>? = null, modern: Boolean = true): String {
         val parts = ArrayList<String>()
         when {
             emulator.startsWith("ra:") -> {
-                if ((system to base) !in ownButtons) cores[emulator]?.let(parts::add)
+                val shooter = if (modern && system == "n64") modernOwn[base] else null
+                if ((system to base) !in ownButtons && shooter == null) cores[emulator]?.let(parts::add)
+                shooter?.let(parts::add)
                 retroOwn[system]?.get(base)?.let(parts::add)
                 // A Game Boy game's looks (GbLooks), when it has them.
                 if (screens != null && screens.size > 1) parts += "L1 and R1 change the screen between " +

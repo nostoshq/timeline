@@ -1209,6 +1209,9 @@ class ExtrasTest {
         val mm = files.getValue("Mupen64Plus-Next/Legend of Zelda, The - Majora's Mask (USA).opt")
         assertTrue(mm.contains("mupen64plus-EnableCopyAuxToRDRAM = \"True\"") && mm.contains("mupen64plus-43screensize"))
         assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_anisotropic_filtering = \"16\""))
+        // a 30-a-second Dreamcast game held evenly, in a game's own options too
+        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_detect_vsync_swap_interval = \"enabled\""))
+        assertTrue(files.getValue("Flycast/Crazy Taxi (USA).opt").contains("reicast_detect_vsync_swap_interval = \"enabled\""))
         // a game run lighter keeps its fix
         val light = RetroPack.files(Look(lighter = mapOf("psx/Tekken 3 (USA)" to true)), RetroPack.Paths("/h", "pkg", "/d", "/a"))
         assertTrue(light.getValue("SwanStation/Tekken 3 (USA).opt").contains("swanstation_GPU_PGXPCPU = \"true\""))
@@ -2497,6 +2500,7 @@ class ExtrasTest {
         val snap = "Pokemon Snap (USA)"
         val files = RetroPack.files(Look(), p)
         assertTrue(files.getValue("Mupen64Plus-Next/$snap.opt").contains("mupen64plus-43screensize = \"1280x960\""))
+        assertTrue(files.getValue("Mupen64Plus-Next/GoldenEye 007 (USA).opt").contains("mupen64plus-43screensize = \"1280x960\""))   // its watch ran late at eight
         val four = files.getValue("Mupen64Plus-Next/$snap.glslp")
         for (line in listOf("scale_x0 = \"1.0\"", "scale_y0 = \"0.5\"", "scale_x1 = \"1.0\"", "scale_y1 = \"0.5\"")) assertTrue(line, four.contains(line))
         assertFalse(four.contains("scale_y2 = \"0.5\""))
@@ -2515,9 +2519,96 @@ class ExtrasTest {
                 assertTrue(line, rmp.contains(line + "\n"))
             assertTrue(rmp.startsWith(RetroPack.n64Buttons()))         // A and B stay where the core's own remap puts them
         }
-        assertNull(out["remaps/Mupen64Plus-Next/GoldenEye 007 (USA).rmp"])
+        assertTrue(out.getValue("remaps/Mupen64Plus-Next/GoldenEye 007 (USA).rmp") == RetroPack.n64DualStick())   // its own two sticks
         assertTrue(ControlsNote.of("n64", "turok - dinosaur hunter", "ra:mupen64plus_next_gles3", true, null).startsWith("A and B are the console's A and B. Move with the left stick"))
         assertTrue(ControlsNote.of("n64", "turok 2 - seeds of evil", "ra:mupen64plus_next_gles3", true, null).contains("No rumble"))
+    }
+
+    @Test fun goldenEyeAndPerfectDarkPlayOnTwoSticksFromOnePad() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val out = RetroPack.files(Look(), p)
+        for (stem in listOf("GoldenEye 007 (USA)", "Perfect Dark (USA) (Rev 1)")) {
+            val rmp = out.getValue("remaps/Mupen64Plus-Next/$stem.rmp")
+            val lines = rmp.lines().filter { it.isNotBlank() }
+            assertEquals("every key once", lines.size, lines.map { it.substringBefore('=').trim() }.toSet().size)
+            // the first controller: look on the right stick, aim (Z) on L2, the left stick and R2 nothing, A and B as everywhere
+            for (line in listOf("input_player1_stk_r_x+ = \"16\"", "input_player1_stk_r_y- = \"19\"", "input_player1_stk_l_x+ = \"-1\"",
+                    "input_player1_stk_l_y- = \"-1\"", "input_player1_btn_l2 = \"12\"", "input_player1_btn_r2 = \"-1\"",
+                    "input_player1_btn_a = \"0\"", "input_player1_btn_b = \"1\"",
+                    // the second: walking on the left stick, fire (Z) on R2, and nothing else
+                    "input_player2_stk_l_x+ = \"16\"", "input_player2_stk_l_y- = \"19\"", "input_player2_stk_r_x- = \"-1\"",
+                    "input_player2_btn_r2 = \"12\"", "input_player2_btn_l2 = \"-1\"", "input_player2_btn_a = \"-1\"", "input_player2_btn_start = \"-1\"",
+                    "input_player2_btn_up = \"-1\"", "input_player3_btn_a = \"0\""))
+                assertTrue("$stem: $line", rmp.contains(line + "\n"))
+            assertFalse(rmp.contains("input_player2_btn_a = \"8\""))
+            // both players on the first controller pressed, with no reservation moving either away
+            val cfg = out.getValue("Mupen64Plus-Next/$stem.cfg")
+            for (line in listOf("input_player1_joypad_index = \"0\"", "input_player2_joypad_index = \"0\"",
+                    "input_player1_device_reservation_type = \"0\"", "input_player2_device_reservation_type = \"0\""))
+                assertTrue("$stem: $line", cfg.contains(line + "\n"))
+        }
+        // a second player's controller connected: the usual controls, a controller each (the files written before are taken away)
+        val two = RetroPack.files(Look(onePlayer = false), p)
+        assertNull(two["remaps/Mupen64Plus-Next/GoldenEye 007 (USA).rmp"])
+        assertNull(two["Mupen64Plus-Next/GoldenEye 007 (USA).cfg"])
+        assertTrue(two.containsKey("remaps/Mupen64Plus-Next/Turok - Dinosaur Hunter (USA) (Rev 2).rmp"))   // each player has a pad of their own
+        // a game's own black-frame file and the shared pad are one file
+        val both = RetroPack.files(Look(motion3d = "Black frames"), p, listOf("n64" to "GoldenEye 007 (USA)")).getValue("Mupen64Plus-Next/GoldenEye 007 (USA).cfg")
+        assertTrue(both.contains("video_black_frame_insertion = \"0\"") && both.contains("input_player2_joypad_index = \"0\""))
+        val note = ControlsNote.of("n64", "goldeneye 007", "ra:mupen64plus_next_gles3", true, null)
+        assertTrue(note, note.startsWith("Once, on the watch: style 2.4 Goodhead and Look Up/Down Upright") && !note.contains("The right stick is the C buttons"))
+        assertTrue(ControlsNote.of("n64", "perfect dark", "ra:mupen64plus_next_gles3", true, null).startsWith("Once, in Control Options: style 2.4 and Reverse Pitch unchecked"))
+        for (base in listOf("goldeneye 007", "perfect dark")) {
+            val n = ControlsNote.of("n64", base, "ra:mupen64plus_next_gles3", true, "Rewind (hold)" to "Fast-forward (hold)")
+            assertTrue("$base: ${n.length}", n.length <= 360)                  // the game page shows six lines
+            assertFalse(n.contains("—") || n.contains("!"))
+        }
+    }
+
+    @Test fun theTwoStickShootersAimFiner() {
+        val files = RetroPack.files(Look(), RetroPack.Paths("/h", "pkg", "/d", "/a"))
+        for (stem in RetroPack.dualStick) {
+            val opt = files.getValue("Mupen64Plus-Next/$stem.opt")
+            assertTrue(stem, opt.contains("mupen64plus-astick-deadzone = \"5\"") && opt.contains("mupen64plus-astick-sensitivity = \"115\""))
+            assertTrue(stem, opt.contains("mupen64plus-pak1 = \"rumble\""))         // and its rumble kept
+        }
+        // the console's processor faster, as measured: four times for GoldenEye, twice for Perfect Dark, the rest as the console
+        assertTrue(files.getValue("Mupen64Plus-Next/GoldenEye 007 (USA).opt").contains("mupen64plus-CountPerOpDenomPot = \"2\""))
+        assertTrue(files.getValue("Mupen64Plus-Next/Perfect Dark (USA) (Rev 1).opt").contains("mupen64plus-CountPerOpDenomPot = \"1\""))
+        assertFalse(files.getValue("Mupen64Plus-Next/Banjo-Tooie (USA).opt").contains("CountPerOpDenomPot"))
+        assertTrue(files.getValue("Mupen64Plus-Next/GoldenEye 007 (USA).opt").contains("mupen64plus-43screensize = \"1280x960\""))
+        // a second player's controller: the usual controls, the finer stick still
+        val two = RetroPack.files(Look(onePlayer = false), RetroPack.Paths("/h", "pkg", "/d", "/a"))
+        assertTrue(two.getValue("Mupen64Plus-Next/Perfect Dark (USA) (Rev 1).opt").contains("mupen64plus-astick-deadzone = \"5\""))
+        // the other shooters keep the core's stick: their aim is the C buttons
+        assertFalse(files["Mupen64Plus-Next/Turok - Dinosaur Hunter (USA) (Rev 2).opt"].orEmpty().contains("astick"))
+    }
+
+    @Test fun theShootersCanHaveTheConsolesOwnControls() {
+        val off = RetroPack.files(Look(n64Modern = false), RetroPack.Paths("/h", "pkg", "/d", "/a"))
+        for (stem in RetroPack.twinStick + RetroPack.dualStick) assertNull(stem, off["remaps/Mupen64Plus-Next/$stem.rmp"])
+        assertNull(off["Mupen64Plus-Next/Perfect Dark (USA) (Rev 1).cfg"])
+        for (stem in RetroPack.dualStick) {                               // the core's own stick back, since RetroArch keeps the last one written
+            val opt = off.getValue("Mupen64Plus-Next/$stem.opt")
+            assertTrue(stem, opt.contains("mupen64plus-astick-deadzone = \"15\"") && opt.contains("mupen64plus-astick-sensitivity = \"100\""))
+        }
+        assertEquals(RetroPack.n64Buttons(), off.getValue("remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp"))
+        for (base in listOf("turok - dinosaur hunter", "goldeneye 007", "perfect dark", "tsumi to batsu - hoshi no keishousha"))
+            assertTrue(base, ControlsNote.of("n64", base, "ra:mupen64plus_next_gles3", true, null, modern = false).startsWith("A and B are the console's A and B. The right stick is the C buttons"))
+        val turok2 = ControlsNote.of("n64", "turok 2 - seeds of evil", "ra:mupen64plus_next_gles3", true, null, modern = false)
+        assertTrue(turok2.contains("The right stick is the C buttons") && turok2.contains("No rumble"))
+    }
+
+    @Test fun onePlayerIsOneControllerInHand() {
+        val own = Players.Pad("Retroid Pocket Controller", 1, false, 0x2020, 0x3001, true)
+        val pro = Players.Pad("Nintendo Switch Pro Controller", 2, true, 0x057e, 0x2009, false)
+        val xbox = Players.Pad("Xbox Wireless Controller", 3, true, 0x045e, 0x0b13, false)
+        assertTrue(Players.onePlayer(listOf(own), tv = false))           // the handheld in the hand
+        assertTrue(Players.onePlayer(listOf(own, pro), tv = true))       // docked with a Pro Controller
+        assertTrue(Players.onePlayer(listOf(own, xbox), tv = true))
+        assertFalse(Players.onePlayer(listOf(own, pro, xbox), tv = true))   // two controllers
+        assertFalse(Players.onePlayer(listOf(own, xbox), tv = false))    // the handheld and a controller beside it
+        assertTrue(Players.onePlayer(emptyList(), tv = false))
     }
 
     @Test fun gamesWithNeedsOfTheirOwnGetTheirFiles() {
