@@ -1722,7 +1722,10 @@ class ExtrasTest {
         // Dreamcast through its VGA box: no television signal, and each of its 480 lines drawn crisply
         val dc = files.getValue("Flycast/Flycast.slangp")
         assertTrue(dc.contains("shaders = \"2\"") && !dc.contains("timeline-signal") && dc.contains("gdv_hires = \"0.0\""))
-        assertTrue(dc.contains("scanline = \"9.0\"") && dc.contains("tl_white = \"3.0\""))     // a PC monitor of its day
+        // ...on a PC monitor of its day, kept bright: lines plain in dark parts and blooming shut in bright ones, the
+        // shadows lifted back to the panel's, and the player's white
+        assertTrue(dc.contains("scanline = \"6.0\"") && dc.contains("gamma_out_green = \"2.6\"") && dc.contains("tl_white = \"2.0\""))
+        assertTrue(psx.contains("scanline = \"10.0\"") && psx.contains("gamma_out_green = \"2.3\""))      // the sets unchanged
         assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_cable_type = \"VGA\""))
         val tvdc = RetroPack.files(off.copy(signal = mapOf("dreamcast" to "Composite")), p)
         assertTrue(tvdc.getValue("Flycast/Flycast.slangp").let { it.contains("shaders = \"3\"") && it.contains("tl_width = \"320.0\"") && it.contains("gdv_hires = \"400.0\"") })
@@ -1990,17 +1993,17 @@ class ExtrasTest {
         assertEquals("3", RetroPack.base(Look(tv = true), p)["video_max_swapchain_images"])   // a television keeps Android's usual queue
     }
 
-    @Test fun dreamcastHoldsStillPicturesSteadyUnderTheBeam() {
+    @Test fun dreamcastIsDrawnWithoutTheBeam() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val files = RetroPack.files(Look(), p)
         val dc = files.getValue("Flycast/Flycast.slangp")
-        assertTrue(dc.contains("shader0 = \"/h/shaders/timeline/timeline-beam.slang\"") && !dc.contains("SCAN_DIRECTION"))
+        assertTrue(dc.startsWith("shaders = \"2\"") && !dc.contains("beam.slang") && !dc.contains("beam-simulator") && !dc.contains("GAIN_VS_BLUR"))
+        assertTrue(files.getValue("Flycast/Flycast.cfg").contains("video_shader_subframes = \"1\""))
         // every other console keeps Blur Busters' own
         for (core in listOf("SwanStation", "Beetle Saturn", "Nestopia"))
             assertTrue(core, files.getValue("$core/$core.slangp").contains("crt-beam-simulator.slang"))
-        // without the CRT look, the beam alone: Dreamcast's is the steady one too
-        val plain = RetroPack.files(Look(crt3d = false), p).getValue("Flycast/Flycast.slangp")
-        assertTrue(plain.contains("timeline-beam.slang") && !plain.contains("SCAN_DIRECTION"))
+        // without the CRT look there is nothing to draw over Dreamcast at all
+        assertNull(RetroPack.files(Look(crt3d = false), p)["Flycast/Flycast.slangp"])
         // still means unchanged for three pictures (history is copied once per slice: two slices, two steps a picture)
         val s = SteadyBeam.slang
         assertTrue(s.startsWith("#version 450\n"))                       // RetroArch reads the version from the first line only
@@ -2266,9 +2269,10 @@ class ExtrasTest {
         assertTrue(psx.contains("GAIN_VS_BLUR = \"0.5\""))     // half the light each refresh: a picture, then black
         assertTrue(files.getValue("Beetle Saturn/Beetle Saturn.slangp").contains("shaders = \"7\""))
         val dc = files.getValue("Flycast/Flycast.slangp")
-        assertTrue(dc.contains("shaders = \"3\"") && dc.contains("timeline-beam.slang") && dc.contains("GAIN_VS_BLUR = \"0.5\""))
-        for (core in listOf("SwanStation", "Beetle PSX HW", "Beetle Saturn", "Flycast"))
+        assertTrue(dc.contains("shaders = \"2\"") && !dc.contains("beam.slang") && !dc.contains("beam-simulator"))      // Dreamcast keeps its monitor's full light
+        for (core in listOf("SwanStation", "Beetle PSX HW", "Beetle Saturn"))
             assertTrue(core, files.getValue("$core/$core.cfg").contains("video_shader_subframes = \"2\""))
+        assertTrue(files.getValue("Flycast/Flycast.cfg").contains("video_shader_subframes = \"1\""))
         // Nintendo 64: GLideN64 at four times its detail under the older OpenGL driver, which has no beam: black
         // frames instead, with the same CRT (its GLSL preset)
         val n64 = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg")

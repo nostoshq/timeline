@@ -69,8 +69,9 @@ Not every console met a living-room television, and those that didn't get the sc
 
 - **Arcade** games get an arcade monitor, seen from arm's length, its slot mask in plain view, at the 9300 K those
   monitors ran at.
-- **Dreamcast** on its VGA box gets a PC monitor of 1999: fine, distinct lines at 640 by 480, the red, green and blue
-  stripes of an aperture grille, and 9300 K.
+- **Dreamcast** on its VGA box gets a PC monitor of 1999: fine, distinct lines at 640 by 480 that bloom shut in bright
+  parts, and the red, green and blue stripes of an aperture grille. It is drawn at full light, with shadows lifted to
+  the panel's and your chosen white, since its dark 3D games otherwise sink into black.
 
 **zFast**, **Easymode**, **Lottes Fast** and **CRT-Pi** are lighter or crisper alternatives, and **Off** draws the
 picture as the console drew it, scaled by whole numbers so every pixel is the same size. **Color boost** lifts color
@@ -89,10 +90,8 @@ a CRT looked sharp. A modern screen holds each picture for the whole frame, and 
   under OpenGL.
 - **Off**.
 
-The Dreamcast gets a steady version of the beam, written for Timeline. When a Dreamcast game loads, the emulator hands
-over a new picture only every tenth of a second, and an ordinary beam would blink ten times a second all through the
-load. Timeline's version flashes moving pixels exactly as the original does and holds still ones steady at the same
-brightness, so loading screens and pauses sit quietly.
+The Dreamcast goes without the beam. Its monitor picture, 480 fine lines through an aperture grille, has no light to
+spare, and the beam's dark refresh would halve what is left.
 
 ## The 3D consoles
 

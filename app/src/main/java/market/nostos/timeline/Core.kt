@@ -1816,7 +1816,7 @@ data class Look(
     fun signalOf(group: String): String = signal[group]?.takeIf { it in RetroPack.signals[group].orEmpty() } ?: RetroPack.signals[group]?.first() ?: "RGB"
     /** Motion clarity needs two screen refreshes per game frame, so it only applies on a 120 Hz panel. */
     val subframes: Boolean get() = motion == "Beam simulator" && hz in 119..121
-    /** The same for PlayStation, Saturn and Dreamcast (beam3d), chosen on its own. */
+    /** The same for PlayStation, Saturn and Nintendo 64 (beam3d), chosen on its own. */
     val subframes3d: Boolean get() = motion3d == "Beam simulator" && hz in 119..121
     val blackFrames3d: Boolean get() = motion3d == "Black frames" && hz >= 119
     val blackFrames: Boolean get() = motion == "Black frames" && hz >= 119
@@ -2289,7 +2289,7 @@ object RetroPack {
         "vignette = \"0.0\"", "scanline = \"${display.scanline}\"",
         "shadowMask = \"${display.mask}\"", "masksize = \"${maskStep(look)}.0\"", "maskDark = \"0.5\"", "maskLight = \"1.5\"", "thres = \"0.3\"",
     ) +
-        (if (glsl) listOf("gamma_out = \"2.3\"") else listOf("warpY = \"0.0\"", "gamma_out_red = \"2.3\"", "gamma_out_green = \"2.3\"", "gamma_out_blue = \"2.3\""))
+        (if (glsl) listOf("gamma_out = \"${display.gamma}\"") else listOf("warpY = \"0.0\"", "gamma_out_red = \"${display.gamma}\"", "gamma_out_green = \"${display.gamma}\"", "gamma_out_blue = \"${display.gamma}\""))
 
     /** GDV's mask types: a slot mask (red, green and blue slots in staggered rows, most American sets and arcade
      * monitors) and an aperture grille (red, green and blue stripes, a Trinitron's or a PC monitor's). */
@@ -2302,10 +2302,16 @@ object RetroPack {
      * staggered rows. An arcade monitor was a television's cousin seen from 0.7 m, the same kind of mask, and like
      * Japanese sets and the Wells-Gardner monitors in American cabinets it ran far bluer, about 9300 K. The Dreamcast's
      * VGA box fed a PC monitor, 15 to 17 inches at 31 kHz, which showed 640 x 480 as fine distinct lines (a slightly
-     * sharper beam, scanline 9) through the stripes of an aperture grille, and shipped at 9300 K too.
+     * sharper beam) through the stripes of an aperture grille.
+     *
+     * The monitor is drawn brighter than the sets: dark Dreamcast games came out near black (MDK2 measured a screen
+     * average of 9 in 255). At two panel rows a line, scanline 9 left the gap row near black in dark scenes (0.22 of the
+     * beam row); 6 keeps the lines plain in dark and middle tones (0.46 and 0.71) and lets bright lines bloom shut, as a
+     * monitor's did. Gamma out 2.6 lifts the shadows GDV's tube curve sinks below a 2.2 panel's (a fifth of a dark
+     * gray's light was left), and it takes the player's white rather than 9300 K, which cost a quarter of the light.
      */
-    enum class Display(val scanline: String, val mask: String, val ownWhite: String?) {
-        TV("10.0", SLOT, null), ARCADE("10.0", SLOT, "3.0"), MONITOR("9.0", GRILLE, "3.0")
+    enum class Display(val scanline: String, val mask: String, val ownWhite: String?, val gamma: String = "2.3") {
+        TV("10.0", SLOT, null), ARCADE("10.0", SLOT, "3.0"), MONITOR("6.0", GRILLE, null, "2.6")
     }
     private fun whiteFor(look: Look, display: Display) = display.ownWhite ?: whiteValue(look)
 
@@ -2403,10 +2409,11 @@ object RetroPack {
      * The 3D consoles given the beam. The beam needs RetroArch to draw each picture twice with a shader between, which its Vulkan driver
      * and its newer OpenGL driver ("glcore") do and its older one ("gl") does not (read from RetroArch 1.22.2's
      * source), but RetroArch's Android build has only the older OpenGL one. So Nintendo 64, which stays on OpenGL, goes
-     * without the beam (n64Parallel), and so does Dreamcast drawn the compatible way.
+     * without the beam (n64Parallel). Dreamcast goes without it too: its black refresh halves the light, and a 480-line
+     * monitor picture through an aperture grille has no light to spare.
      */
     fun beam3d(look: Look): List<String> = listOf("SwanStation", "Beetle PSX HW", "Beetle Saturn") +
-        (if (n64Parallel(look)) listOf("Mupen64Plus-Next") else emptyList()) + (if (look.compatible) emptyList() else listOf("Flycast"))
+        (if (n64Parallel(look)) listOf("Mupen64Plus-Next") else emptyList())
 
     /**
      * A television console's chain: the beam, the signal (NTSC filter, unless RGB), the set's colour ([Colour]), then

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+- **Dreamcast, bright again.** Its VGA monitor had sunk dark games such as MDK2 into near black: the gaps between its
+  480 lines, the aperture grille, a 9300 K white and the beam each took light, and together they left about a seventh
+  of it in the shadows. The lines are now plain in dark and middle tones and bloom shut in bright ones, as a monitor's
+  did; the shadows are lifted back to the panel's; the monitor takes your chosen white; and the Dreamcast goes without
+  the beam. The grille and the lines are still in view.
+
 ## 1.3.0
 
 - **Docked: 60 Hz, and a mask that holds still.** Docked to a television, games are always set for 60 Hz, which every

@@ -1196,9 +1196,9 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                     "Black frames is the plain version. Both are dimmer, and 50 Hz games skip them."),
             app.choice("3D consoles: motion", "ra.motion3d", RetroPack.motionChoices,
                 (if (fast) "" else "Needs a 120 Hz panel; this one is at ${app.refreshRate.toInt()}, so it is skipped. ") +
-                    "The beam for PlayStation, Saturn and Dreamcast; Nintendo 64 gets black frames, since it draws in a " +
+                    "The beam for PlayStation and Saturn; Nintendo 64 gets black frames, since it draws in a " +
                     "way the beam cannot follow. Games that run at 30 or 20 frames a second show a faint double image in " +
-                    "motion, as they did on a tube. 50 Hz games skip it."),
+                    "motion, as they did on a tube. 50 Hz games skip it. Dreamcast goes without, so its monitor keeps its full light."),
             app.choice("Handhelds: screen", "ra.handheld", RetroPack.handheldChoices,
                 "As the console: each screen as it was. The Game Boy's green dots of ink over their reflector, with its smear; the Game Boy Color's " +
                     "washed-out colors and pixel shape; the Game Boy Advance's dark, unlit screen; the Game Gear's slow backlit one at its own wider shape. " +
@@ -1230,7 +1230,7 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                     "right stick points, R1 shakes). Off leaves the controls to whatever you map in Dolphin yourself."),
             app.choice("Television white", "ra.white", RetroPack.whiteChoices,
                 "The white the television showed. American sets were sold bluer than the broadcast standard, about 8000 K on average; " +
-                    "Japanese sets, the ones these games were made on, ran at 9300 K. 6500 K is the studio standard. Arcade monitors and the Dreamcast's VGA monitor keep their own 9300 K."),
+                    "Japanese sets, the ones these games were made on, ran at 9300 K. 6500 K is the studio standard. Arcade monitors keep their own 9300 K."),
             Item("Color boost", "${app.prefs.int("ra.saturation", 100)}%", "100 is each console's own color. More lifts it under the GDV screen, past what a television showed.", onStep = { d ->
                 app.prefs.put("ra.saturation", (app.prefs.int("ra.saturation", 100) + d * 5).coerceIn(100, 130))
                 app.touchSettings()
