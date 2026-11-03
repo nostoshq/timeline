@@ -70,7 +70,8 @@ a single choice in Settings, Picture, Signal, and you can change any of them.
   without gaps between their lines, as an interlaced picture looked. A sharper look is one switch away.
 - **GameCube, Wii and PlayStation 2** get a 480-line television written for Dolphin and ARMSX2.
 - **Game Boy, Game Boy Color, Game Boy Advance, Game Gear and DS** look as their screens did: the Game Boy's green dot
-  matrix and smear, the Color's washed-out color, the Advance's darker unlit screen.
+  matrix and smear, the Color's washed-out color, the Advance's darker unlit screen. L1 and R1 put a Game Boy game on
+  a Pocket's screen, or in the colors a Game Boy Color gave it.
 
 [More on the picture, console by console](docs/picture.md).
 

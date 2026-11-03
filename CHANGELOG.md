@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.5.0
+
+- **The Game Boy's three screens.** With **Settings, Picture, Handhelds: screen** at As the console, L1 and R1 change a
+  Game Boy game's screen while it plays: the first Game Boy's green dot matrix, the Pocket's black and white one, or
+  the game as a Game Boy Color showed it, in the colors the Color's start-up gave that cartridge, on the Color's own
+  screen. Each game starts in the screen it was left in. The palettes are SameBoy's, and the Color's screen follows
+  Pokefan531's model of its colors.
+- **Wii games held their own way.** Xenoblade Chronicles plays on the Classic Controller. In Metroid Prime 3, R2 and
+  the right stick push, pull and twist its handles; in Super Mario Galaxy and Super Mario Galaxy 2, R2 stands the
+  remote up and the left stick tilts it; in New Super Mario Bros. Wii, the right stick tilts it; in Skyward Sword, the
+  right stick swings the sword. A game that takes nothing but the remote is played with it held sideways. Each game's
+  page says how.
+- **GameCube fixes.** EA's videos in MVP Baseball 2005 and NBA Street Vol. 2 lose their vertical lines; Super
+  Mario Strikers' loading picture, Tony Hawk's Pro Skater 3's videos, Resident Evil's map, Resident Evil 4 and Luigi in
+  Luigi's Mansion's intro are drawn correctly. Luigi's Mansion starts from its title every time, since loading a kept
+  place breaks its memory card: save in the game.
+- **Nintendo 64.** 25 games made for the Rumble Pak shake on every port; the core had put a Controller Pak in port 1
+  and nothing in the others. The games that save to a Controller Pak keep it, as on the console, and their page
+  says so. Banjo-Kazooie's jigsaw transitions, Blast Corps' banners, Majora's Mask's Pictograph Box and Mario Tennis's
+  scoreboard are drawn correctly. Killer Instinct Gold's six attacks each have a button: punches on
+  Y, X and R1, kicks on B, A and R2.
+- **PlayStation.** The racers and the games made for the sticks start with the pad in analog mode, as DuckStation
+  starts them: Gran Turismo 2, Ridge Racer Type 4, Crash Team Racing, Metal Gear Solid, Silent Hill and others.
+  Discs always read at the console's own speed, which Symphony of the Night, Driver and the films of Final Fantasy
+  VIII and Chrono Cross need. Snake no longer walks through walls in Metal Gear Solid. In the sharper look, models hold
+  still in Spyro, Tekken 3, Vagrant Story and others, and Beetle PSX's textures no longer warp. Resident Evil 3's discs
+  no longer hang, Resident Evil 2 keeps its lines of dialogue and Crash Bandicoot: Warped its intro's sound. Gran Turismo 2's
+  Arcade disc races the cars won on its Simulation disc, and Suikoden II finds a Suikoden save in its second card
+  slot, as on the console.
+- **Saturn and Dreamcast.** NiGHTS, Burning Rangers, Panzer Dragoon Saga and Shining Force III play on the 3D Control
+  Pad, its stick and analog triggers included; SELECT switches it between analog and digital, as the pad's own switch
+  did. Crazy Taxi's Crazy Box no longer breaks up, Marvel vs. Capcom 2 and Street Fighter III: 3rd Strike no longer
+  warp and tear in the sharper look, and Rayman 2 starts, going without achievements.
+- **NES, TurboGrafx-16 and arcade.** On the Super Mario Bros., Duck Hunt and World Class Track Meet cartridge, Duck
+  Hunt is played by touching the screen, and docked the second pad plays Luigi; before, the second port had a Power
+  Pad the core cannot read. L2 no longer switches the TurboGrafx-16 pad to six buttons, which no HuCard was made for.
+  Capcom's six-button fighters put heavy punch and kick on R1 and R2, as on a fight pad. Shinobi's text is in English,
+  Ghouls'n Ghosts and Strider let a second pad play at the same time, and BurgerTime stands upright.
+- **The handhelds.** On the DS, R2 changes the screens again, R3 touches at the pointer and L2 is the microphone,
+  after melonDS DS moved them in 2025. The microphone blows, for Phoenix Wright's fingerprints and Bowser's giant
+  battles, and the pointer shows for three seconds after it moves. Touch-screen games such as
+  Kirby: Canvas Curse and Elite Beat Agents start with the touch screen large, and Sonic Rush, Contra 4 and The World
+  Ends with You with both screens. Castlevania: Order of Ecclesia no longer sticks after its intro. The Oracles,
+  Shantae and Wendy: Every Witch Way run as on a Game Boy Advance, with the extras they hold for it. The Game Boy
+  Advance WarioWare played by turning the handheld reads the handheld's motion. The Pokémon games leave with START
+  and SELECT pressed twice, so their own reset, which takes both, still works.
+- **Sega CD saves.** The RAM cart is kept for each game, as the console's own memory already was, instead of one cart
+  shared by every game. Shining Force CD's saves need it.
+- **Notes for single games.** A game's page says what is special about it: Metal Gear Solid's codec frequency and
+  Psycho Mantis, StarTropics' Sub-C frequency, Boktai's sun on R3 and L3, Pokémon Stadium's Transfer Pak, the
+  GameCube games whose Game Boy Advance extras cannot be used here, and others.
+
 ## 1.4.0
 
 - **Brighter televisions and arcade monitors.** The sets had the same light budget the Dreamcast's monitor had before

@@ -54,7 +54,7 @@ object Catalog {
         sys("n3ds", "Nintendo 3DS", "Nintendo 3DS", 2011, "3ds cci cxi zcci", "azahar"),
         sys("psvita", "PS Vita", "PS Vita", 2011, "psvita", "vita3k"),
         sys("wiiu", "Wii U", "Wii U", 2012, "wua wud wux rpx", "cemu"),
-   )
+    )
 
     fun system(id: String): SystemDef? = systems.firstOrNull { it.id == id }
 }
@@ -88,7 +88,7 @@ object Emulators {
         "com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture",
         "com.retroarch.ra32/com.retroarch.browser.retroactivity.RetroActivityFuture",
         "com.retroarch/com.retroarch.browser.retroactivity.RetroActivityFuture",
-   )
+    )
 
     private val coreNames = mapOf(
         "stella" to "Stella", "fbneo" to "FinalBurn Neo", "mame2003_plus" to "MAME 2003-Plus",
@@ -98,7 +98,7 @@ object Emulators {
         "mednafen_saturn" to "Beetle Saturn", "yabasanshiro" to "YabaSanshiro",
         "mupen64plus_next_gles3" to "Mupen64Plus-Next", "tyrquake" to "TyrQuake", "flycast" to "Flycast",
         "melondsds" to "melonDS DS",
-   )
+    )
 
     private val standalone: Map<String, Emu> = listOf(
         Emu("duckstation", "DuckStation", listOf("com.github.stenzek.duckstation/.EmulationActivity"),
@@ -354,7 +354,7 @@ object Titles {
         "Spider-Man: Venom: Maximum Carnage" to "Spider-Man and Venom: Maximum Carnage",
         "Super Ghouls 'N Ghosts" to "Super Ghouls'n Ghosts",
         "Tsumi to Batsu: Hoshi no Keishousha" to "Sin and Punishment", "WCW-nWo Revenge" to "WCW/nWo Revenge",
-   )
+    )
 
     private val marks = Regex("\\p{Mn}+")
 
@@ -415,7 +415,7 @@ object Titles {
         "shocktro" to "Shock Troopers", "magdrop3" to "Magical Drop III", "pbobblen" to "Bust-A-Move",
         "ddonpach" to "DoDonPachi", "s1945ii" to "Strikers 1945 II", "ckong" to "Crazy Kong", "bubbles" to "Bubbles",
         "1941" to "1941: Counter Attack",
-   )
+    )
 }
 
 object Library {
@@ -695,10 +695,40 @@ object DolphinPack {
     private val gameCube = listOf("G", "D", "P", "U")
     private val wii = listOf("R", "S")
 
-    /** Wii games that are better served by something other than a Wii Remote and Nunchuk, by game ID. */
-    private val special: Map<String, Map<String, String>> = mapOf(
-        "R7PE01" to mapOf("WiimoteProfile1" to SIDEWAYS),    // Punch-Out!!: the remote held sideways, like an NES pad
-   )
+    /**
+     * How a Wii game's controller is held, where the usual remote and Nunchuk ([PROFILE]) leave out something it needs.
+     * Each is a profile of its own, the usual one with that added. Tilting and swinging are emulated motion: R2 held
+     * with a stick, where a stick already has another use.
+     */
+    enum class Hold(val profile: String) {
+        /** The remote alone, held sideways like an NES pad. */
+        SIDEWAYS(DolphinPack.SIDEWAYS),
+        /** The Classic Controller. */
+        CLASSIC("Timeline classic"),
+        /** Pointing where the stick is (the view stops turning when it is let go), and pushing, pulling and twisting. */
+        POINT("Timeline pointing"),
+        /** The remote stood up while R2 is held, and tilted with the left stick. */
+        UPRIGHT("Timeline upright"),
+        /** The remote tilted left and right with the right stick, whose pointer the game does not use. */
+        TILT("Timeline tilt"),
+        /** The sword swung with the right stick; the remote tilted with R2 and the left stick. */
+        SWORD("Timeline sword"),
+    }
+
+    /** Wii games that are better served by something other than the usual remote and Nunchuk, by game ID. */
+    private val holds: Map<String, Hold> = mapOf(
+        "R7PE01" to Hold.SIDEWAYS,     // Punch-Out!!: it takes no GameCube pad or Classic Controller
+        "SX4E01" to Hold.CLASSIC,      // Xenoblade Chronicles, made for the Classic Controller too (Dolphin wiki)
+        "RM3E01" to Hold.POINT,        // Metroid Prime 3: its handles are pushed, pulled and twisted
+        "RMGE01" to Hold.UPRIGHT,      // Super Mario Galaxy: the ball and ray stages and the Fluzzard
+        "SB4E01" to Hold.UPRIGHT,      // Super Mario Galaxy 2
+        "SMNE01" to Hold.TILT,         // New Super Mario Bros. Wii: its tilt platforms, and World 8-5
+        "SOUE01" to Hold.SWORD,        // Skyward Sword: the sword, flying and the beetle
+    )
+    private val special: Map<String, Map<String, String>> = holds.mapValues { mapOf("WiimoteProfile1" to it.value.profile) }
+
+    /** GameCube games that start fresh every time: Luigi's Mansion's memory card breaks when a saved place is loaded (Dolphin 12220, 13320). */
+    fun startsFresh(base: String): Boolean = base == "luigi's mansion"
 
     /** Wii games played with the GameCube pad, as they were meant to be, by every player: Brawl and Mario Kart Wii. */
     private val padGames = listOf("RSBE01", "RMCE01")
@@ -712,18 +742,18 @@ object DolphinPack {
         val set = mapOf(
             "Controls" to (0 until ports).associate { "WiimoteSource$it" to "0" } + (2..ports).associate { "PadProfile$it" to "$PROFILE $it" },
             "Core" to (1..ports).associate { "SIDevice${it - 1}" to "6" },
-       ).filterValues { it.isNotEmpty() }
+        ).filterValues { it.isNotEmpty() }
         val from = maxOf(ports, 1) + 1
         val remove = mapOf(
             "Controls" to ((ports until 4).map { "WiimoteSource$it" } + (from..4).map { "PadProfile$it" }).toSet(),
             "Core" to ((ports + 1)..4).map { "SIDevice${it - 1}" }.toSet(),
-       ).filterValues { it.isNotEmpty() }
+        ).filterValues { it.isNotEmpty() }
         return set to remove
     }
 
     /**
      * Fixes a game needs that Dolphin's own game settings do not already make, from the Dolphin wiki's game pages and
-     * its bug tracker (disc IDs read from the games themselves). Each is the documented setting:
+     * its bug tracker (gathered 2026-10-28 and 2026-11-02; disc IDs read from the games themselves). Each is the documented setting:
      * copies kept in memory where a game reads them back (lens flares, credits, transitions), a safe texture cache
      * where emblems or text would be wrong, the GPU thread kept in step, one core where two crash, and the emulated
      * processor sped up for the two Tony Hawk games that slowed down on the console itself.
@@ -750,7 +780,15 @@ object DolphinPack {
                 "Video_Settings" to mapOf("SafeTextureCacheColorSamples" to "0")),                                    // Mario Kart Wii
             "SB4E01" to mapOf("Video_Hacks" to mapOf("XFBToTextureEnable" to "False")),                               // Super Mario Galaxy 2
             "GPIE01" to mapOf("Video_Settings" to mapOf("SafeTextureCacheColorSamples" to "512")),                    // Pikmin
-       )
+            // EA's VP6 videos show vertical lines with fast texture sampling (Dolphin wiki, Problems/VP6 Videos)
+            "GV4E69" to mapOf("Video_Hacks" to mapOf("FastTextureSampling" to "False")),                              // MVP Baseball 2005
+            "GNZE69" to mapOf("Video_Hacks" to mapOf("FastTextureSampling" to "False")),                              // NBA Street Vol. 2
+            "G4QE01" to mapOf("Video_Hacks" to mapOf("XFBToTextureEnable" to "False")),                               // Super Mario Strikers, its loading picture
+            "GT3E52" to mapOf("Video_Hacks" to mapOf("XFBToTextureEnable" to "False")),                               // Tony Hawk's Pro Skater 3, its videos
+            "GBIE08" to mapOf("Video_Settings" to mapOf("SafeTextureCacheColorSamples" to "0")),                      // Resident Evil, its map
+            "G4BE08" to mapOf("Video_Settings" to mapOf("SafeTextureCacheColorSamples" to "0", "FastDepthCalc" to "False")),  // Resident Evil 4
+            "GLME01" to mapOf("Core" to mapOf("CPUThread" to "False")),                                               // Luigi's Mansion, Luigi in the intro
+        )
     }
 
     private fun ini(sections: List<Pair<String, List<Pair<String, String>>>>): String =
@@ -826,31 +864,73 @@ object DolphinPack {
     private fun across(devices: List<String>, keys: List<Pair<String, String>>): List<Pair<String, String>> =
         if (devices.size <= 1) keys else keys.map { (k, v) ->
             if (isSetting(k)) k to v
-            else k to v.split("|").map { it.trim().trim('`') }.flatMap { c -> devices.map { d -> "`$d:$c`" } }.joinToString(" | ")
+            else k to v.split("|").map { it.trim() }.flatMap { alt ->
+                // A control that needs two at once ("`Button R2` & `Axis 11-`") takes both from the same controller.
+                val parts = alt.split("&").map { it.trim().trim('`') }
+                devices.map { d -> if (parts.size == 1) "`$d:${parts[0]}`" else parts.joinToString(" & ", "(", ")") { "`$d:$it`" } }
+            }.joinToString(" | ")
         }
 
     /**
      * The handheld's controls as a Wii Remote. Usual form: remote and Nunchuk, the left stick as the Nunchuk's, the
      * right stick as the pointer, R1 to shake. Sideways form: the remote alone, turned on its side.
      */
-    fun wiiRemote(device: String, sideways: Boolean): String = wiiRemote(listOf(device), sideways)
+    fun wiiRemote(device: String, sideways: Boolean): String = wiiRemote(listOf(device), if (sideways) Hold.SIDEWAYS else null)
 
-    fun wiiRemote(devices: List<String>, sideways: Boolean): String = ini(listOf("Profile" to across(devices, listOf(
-        "Device" to devices.first(),
-        "Buttons/A" to "`Button A`", "Buttons/B" to "`Button B`", "Buttons/1" to "`Button X`", "Buttons/2" to "`Button Y`",
-        "Buttons/-" to "Select", "Buttons/+" to "Start", "Buttons/Home" to "`Button R3`",
-        "D-Pad/Up" to "`Axis 16-`", "D-Pad/Down" to "`Axis 16+`", "D-Pad/Left" to "`Axis 15-`", "D-Pad/Right" to "`Axis 15+`",
-        "Shake/X" to "`Button R1`", "Shake/Y" to "`Button R1`", "Shake/Z" to "`Button R1`",
-   ) + if (sideways) listOf(
-        "Options/Sideways Wiimote" to "True", "Extension" to "None",
-   ) else listOf(
-        "Options/Sideways Wiimote" to "False", "Extension" to "Nunchuk",
-        "IR/Up" to "`Axis 14-`", "IR/Down" to "`Axis 14+`", "IR/Left" to "`Axis 11-`", "IR/Right" to "`Axis 11+`",
-        "IR/Auto-Hide" to "True", "IR/Relative Input" to "True",
-        "Nunchuk/Stick/Up" to "`Axis 1-`", "Nunchuk/Stick/Down" to "`Axis 1+`", "Nunchuk/Stick/Left" to "`Axis 0-`", "Nunchuk/Stick/Right" to "`Axis 0+`",
-        "Nunchuk/Buttons/C" to "`Button L1`", "Nunchuk/Buttons/Z" to "`Button L2` | `Axis 23+` | `Axis 17+`",
-        "Nunchuk/Shake/X" to "`Button L3`", "Nunchuk/Shake/Y" to "`Button L3`", "Nunchuk/Shake/Z" to "`Button L3`",
-   ))))
+    fun wiiRemote(devices: List<String>, sideways: Boolean): String = wiiRemote(devices, if (sideways) Hold.SIDEWAYS else null)
+
+    /** The same for a game held its own way ([holds]); null is the usual remote and Nunchuk. */
+    fun wiiRemote(devices: List<String>, hold: Hold?): String {
+        val held = "`Button R2`"
+        fun tiltOnLeftStick() = listOf("Tilt/Forward" to "$held & `Axis 1-`", "Tilt/Backward" to "$held & `Axis 1+`",
+            "Tilt/Left" to "$held & `Axis 0-`", "Tilt/Right" to "$held & `Axis 0+`")
+        val keys = LinkedHashMap<String, String>()
+        keys["Device"] = devices.first()
+        if (hold == Hold.CLASSIC) {
+            // The Classic Controller has the handheld's own shape: buttons, sticks, d-pad and shoulders where they are.
+            keys += listOf("Extension" to "Classic",
+                "Classic/Buttons/A" to "`Button A`", "Classic/Buttons/B" to "`Button B`", "Classic/Buttons/X" to "`Button X`", "Classic/Buttons/Y" to "`Button Y`",
+                "Classic/Buttons/ZL" to "`Button L2` | `Axis 23+` | `Axis 17+`", "Classic/Buttons/ZR" to "`Button R2` | `Axis 22+` | `Axis 18+`",
+                "Classic/Buttons/-" to "Select", "Classic/Buttons/+" to "Start", "Classic/Buttons/Home" to "`Button R3`",
+                "Classic/Triggers/L" to "`Button L1`", "Classic/Triggers/R" to "`Button R1`",
+                "Classic/Left Stick/Up" to "`Axis 1-`", "Classic/Left Stick/Down" to "`Axis 1+`", "Classic/Left Stick/Left" to "`Axis 0-`", "Classic/Left Stick/Right" to "`Axis 0+`",
+                "Classic/Right Stick/Up" to "`Axis 14-`", "Classic/Right Stick/Down" to "`Axis 14+`", "Classic/Right Stick/Left" to "`Axis 11-`", "Classic/Right Stick/Right" to "`Axis 11+`",
+                "Classic/D-Pad/Up" to "`Axis 16-`", "Classic/D-Pad/Down" to "`Axis 16+`", "Classic/D-Pad/Left" to "`Axis 15-`", "Classic/D-Pad/Right" to "`Axis 15+`",
+                "Options/Sideways Wiimote" to "False")
+            return ini(listOf("Profile" to across(devices, keys.toList())))
+        }
+        keys += listOf(
+            "Buttons/A" to "`Button A`", "Buttons/B" to "`Button B`", "Buttons/1" to "`Button X`", "Buttons/2" to "`Button Y`",
+            "Buttons/-" to "Select", "Buttons/+" to "Start", "Buttons/Home" to "`Button R3`",
+            "D-Pad/Up" to "`Axis 16-`", "D-Pad/Down" to "`Axis 16+`", "D-Pad/Left" to "`Axis 15-`", "D-Pad/Right" to "`Axis 15+`",
+            "Shake/X" to "`Button R1`", "Shake/Y" to "`Button R1`", "Shake/Z" to "`Button R1`",
+        )
+        if (hold == Hold.SIDEWAYS) {
+            // Held like an NES pad: 1 and 2 on B and A, where an NES pad's B and A sit; the remote's own A and B above.
+            keys += listOf("Buttons/1" to "`Button B`", "Buttons/2" to "`Button A`", "Buttons/A" to "`Button X`", "Buttons/B" to "`Button Y`",
+                "Options/Sideways Wiimote" to "True", "Extension" to "None")
+            return ini(listOf("Profile" to across(devices, keys.toList())))
+        }
+        keys += listOf(
+            "Options/Sideways Wiimote" to "False", "Extension" to "Nunchuk",
+            "IR/Up" to "`Axis 14-`", "IR/Down" to "`Axis 14+`", "IR/Left" to "`Axis 11-`", "IR/Right" to "`Axis 11+`",
+            "IR/Auto-Hide" to "True", "IR/Relative Input" to "True",
+            "Nunchuk/Stick/Up" to "`Axis 1-`", "Nunchuk/Stick/Down" to "`Axis 1+`", "Nunchuk/Stick/Left" to "`Axis 0-`", "Nunchuk/Stick/Right" to "`Axis 0+`",
+            "Nunchuk/Buttons/C" to "`Button L1`", "Nunchuk/Buttons/Z" to "`Button L2` | `Axis 23+` | `Axis 17+`",
+            "Nunchuk/Shake/X" to "`Button L3`", "Nunchuk/Shake/Y" to "`Button L3`", "Nunchuk/Shake/Z" to "`Button L3`",
+        )
+        when (hold) {
+            Hold.POINT -> keys += listOf("IR/Relative Input" to "False",
+                "Swing/Forward" to "$held & `Axis 14-`", "Swing/Backward" to "$held & `Axis 14+`",
+                "Tilt/Left" to "$held & `Axis 11-`", "Tilt/Right" to "$held & `Axis 11+`")
+            Hold.UPRIGHT -> keys += listOf("Hotkeys/Upright Hold" to held) + tiltOnLeftStick()
+            Hold.TILT -> keys += listOf("Tilt/Left" to "`Axis 11-`", "Tilt/Right" to "`Axis 11+`")
+            Hold.SWORD -> keys += listOf("Swing/Up" to "`Axis 14-`", "Swing/Down" to "`Axis 14+`", "Swing/Left" to "`Axis 11-`", "Swing/Right" to "`Axis 11+`") +
+                tiltOnLeftStick()
+            else -> {}
+        }
+        return ini(listOf("Profile" to across(devices, keys.toList())))
+    }
 
     fun docs(look: Look, found: String?): List<Doc> = docs(look, listOfNotNull(found))
 
@@ -871,7 +951,7 @@ object DolphinPack {
         if (device != null) {
             out += Doc("Config/Profiles/GCPad/$PROFILE.ini", text = gamePad(device))
             out += Doc("Config/Profiles/Wiimote/$PROFILE.ini", text = wiiRemote(device, sideways = false))
-            out += Doc("Config/Profiles/Wiimote/$SIDEWAYS.ini", text = wiiRemote(device, sideways = true))
+            for (hold in Hold.values()) out += Doc("Config/Profiles/Wiimote/${hold.profile}.ini", text = wiiRemote(device, hold))
             ports.drop(1).forEachIndexed { i, d ->
                 out += Doc("Config/Profiles/GCPad/$PROFILE ${i + 2}.ini", text = gamePad(d))
                 out += Doc("Config/Profiles/Wiimote/$PROFILE ${i + 2}.ini", text = wiiRemote(d, sideways = false))
@@ -1074,6 +1154,28 @@ object Sizes {
  * "_timeline/saves/earlier/<emulator>/..." holds what each newer copy replaced, under the same name with the moment
  * that version was written added to the end ("Some Game (USA).srm.20300102-030405").
  */
+/**
+ * A PlayStation memory card as its 128 KB image (RetroArch's `.srm`, SwanStation's `.mcd` and other emulators' `.mcr`
+ * all hold it byte for byte): block 0 is the directory, a 128-byte frame for each of the 15 save blocks.
+ */
+object PsxCard {
+    const val SIZE = 131072
+
+    /** The names of the saves on [card] (a frame whose state is 0x51 starts one), or none for anything that is not a card. */
+    fun saves(card: ByteArray): Set<String> {
+        if (card.size != SIZE || card[0] != 'M'.code.toByte() || card[1] != 'C'.code.toByte()) return emptySet()
+        return (1..15).mapNotNull { i ->
+            val f = i * 128
+            val state = (card[f].toInt() and 0xFF) or ((card[f + 1].toInt() and 0xFF) shl 8) or
+                ((card[f + 2].toInt() and 0xFF) shl 16) or ((card[f + 3].toInt() and 0xFF) shl 24)
+            if (state != 0x51) null else String(card, f + 10, 20, Charsets.US_ASCII).substringBefore('\u0000').takeIf { it.isNotEmpty() }
+        }.toSet()
+    }
+
+    /** Whether [newer] may take [older]'s place without losing a save only [older] has. */
+    fun covers(newer: ByteArray, older: ByteArray): Boolean = saves(newer).let { have -> saves(older).all { it in have } }
+}
+
 object Saves {
     const val RECENT = 6          // earlier versions of a game's own save that are always kept
     const val MOST = 20           // beyond those, one a day is kept, up to this many in all
@@ -1102,7 +1204,7 @@ object Saves {
 
     // What may follow a game's own name: an ending (.srm, .rtc), a place or state, a Dreamcast memory card (.A1.bin),
     // or Sega CD cartridge memory (_cart.brm).
-    private val tail = Regex("^(\\.[A-Za-z0-9]+|\\.state\\.auto(\\.earlier)?|\\.[A-D][12]\\.bin|_cart\\.brm)$")
+    private val tail = Regex("^(\\.[A-Za-z0-9]+|\\.state\\.auto(\\.earlier)?|\\.[A-D][12]\\.bin|_([0-9]+[KM]bit_)?cart\\.brm)$")
 
     private val discId = Regex("\\[BOOT\\] Game ID is \\[([A-Za-z0-9][A-Za-z0-9 ._-]{1,20})\\]")
 
@@ -1292,7 +1394,7 @@ object Vendor {
         BRIGHTNESS_MODE to Regex("[01]"),
         CHARGE_LIMIT to Regex("[01]"),
         FAN_LINK to Regex("[01]"),
-   )
+    )
 
     /** The fan values the maker is known to use. Anything else on a device means "do not touch". */
     val knownFan = setOf("0", "1", "4", "5", "6")
@@ -1442,7 +1544,7 @@ object ConsoleColor {
         "psx" to 0xFFB8C0D0, "saturn" to 0xFF4B6CB7, "n64" to 0xFF00A650, "dreamcast" to 0xFFFF6A13,
         "ps2" to 0xFF2E6DB4, "gba" to 0xFF5A4FCF, "gc" to 0xFF6A5ACD, "xbox" to 0xFF107C10,
         "nds" to 0xFFC8D0E0, "psp" to 0xFFB8C0D0, "wii" to 0xFF8EE3F5,
-   )
+    )
     fun of(system: String): Int? = colors[system]?.toInt()
 }
 
@@ -1471,13 +1573,13 @@ object Eq {
         "Neutral" to listOf(0, 0, 0, 0, 0),
         "Warmer" to listOf(10, 15, 0, -5, -10),
         "Brighter" to listOf(-5, 0, 0, 10, 15),
-   )
+    )
 
     /** Shapes saved by earlier versions, which boosted bass the speakers cannot play, become the nearest of these. */
     private val earlier = mapOf(
         listOf(20, 0, 15, 30, 50) to "Neutral", listOf(0, 0, 0, 0, 0) to "Neutral",
         listOf(10, 0, 10, 40, 70) to "Brighter", listOf(40, 20, 0, 10, 20) to "Warmer",
-   )
+    )
 
     fun parse(text: String): List<Int> {
         val raw = text.split(',').mapNotNull { it.trim().toIntOrNull() }
@@ -1642,7 +1744,7 @@ object SpeakerChain {
     val edges = floatArrayOf(
         63f, 90f, 112f, 125f, 140f, 160f, 180f, 200f, 250f, 315f, 400f, 500f, 630f, 800f, 1000f, 1250f, 1600f, 2000f,
         2500f, 3150f, 4000f, 5000f, 6300f, 8000f, 10000f, 12500f, 16000f, 20000f, 24000f,
-   )
+    )
 
     /**
      * The correction for each band of [edges], in dB, measured on a Retroid Pocket Nova: sweeps through the game sound
@@ -1663,7 +1765,7 @@ object SpeakerChain {
         -2f, -1.4f, 0f, 0.9f, 0.8f,                 // 1.25 to 4 kHz: nearly flat (a hand around the device lifts 2.5 kHz)
         -5.9f, -3f,                                 // 4 to 6.3 kHz: the sharp peak at 5 kHz taken down
         7.6f, 12f, 12f, 6f, 3f, 0f,                 // above 6.3 kHz, where they fall away steeply: a lift, eased off above hearing
-   )
+    )
 
     /** The correction at a frequency, in dB: the high-pass and the measured band it falls in. */
     /** The measured correction belongs to the Retroid Pocket Nova's speakers; anywhere else the chain shapes nothing itself. */
@@ -1690,7 +1792,7 @@ object SpeakerChain {
         Comp(600f, 5f, 100f, 2.5f, -20f, 6f, 4f),        // the low end: a little firmer, the cones' travel is here
         Comp(5000f, 8f, 120f, 2f, -18f, 8f, 5f),         // voices and most of the music
         Comp(24000f, 3f, 80f, 2f, -22f, 8f, 4.5f),       // the top: quick, so cymbals and hiss do not pump
-   )
+    )
 
     /** The limiter: attack and release (ms), ratio, threshold (dB). */
     const val LIMIT_ATTACK = 1f
@@ -1850,7 +1952,7 @@ object Hotkeys {
         "Save state" to "input_save_state_btn",
         "Load state" to "input_load_state_btn",
         "Screenshot" to "input_screenshot_btn",
-   )
+    )
     val actions: List<String> = listOf("Nothing") + keys.keys
     private val cartridge = setOf("atari2600", "arcade", "nes", "mastersystem", "tg16", "genesis", "gb", "snes", "gamegear", "gbc", "gba")
 
@@ -1883,7 +1985,7 @@ object RetroPack {
         "Easymode" to Crt("crt/shaders/crt-easymode.slang", linear = false),
         "Lottes Fast" to Crt("crt/shaders/crt-lottes-fast.slang", linear = true),
         "CRT-Pi" to Crt("crt/shaders/crt-pi.slang", linear = true),
-   )
+    )
     val crtChoices: List<String> = crts.keys.toList() + "Off"
 
     /**
@@ -2089,7 +2191,9 @@ object RetroPack {
     }
 
     /** Genesis Plus GX's options: [borders], the 16 lines of border colour a set showed around a 224-line picture. */
-    private fun genesisOpt(borders: Boolean) = mapOf("genesis_plus_gx_system_bram" to "per game",
+    // Sega CD backup memory, both kinds, kept for each game: the console's own 8 KB, and the RAM cart (Shining Force CD's
+    // 99-block saves need it), which the core would otherwise share among every game as one "4Mbit_cart.brm".
+    private fun genesisOpt(borders: Boolean) = mapOf("genesis_plus_gx_system_bram" to "per game", "genesis_plus_gx_cart_bram" to "per game",
         "genesis_plus_gx_overscan" to if (borders) "top/bottom" else "disabled", "genesis_plus_gx_aspect_ratio" to "auto")
     // Pixel Transparency, from the shader pack on the card: on the unlit Game Boy and Game Boy Color screens, white and
     // pale pixels let the screen show through instead of glowing, with a faint shadow under the picture. Drawn over the
@@ -2098,9 +2202,21 @@ object RetroPack {
         "LCD3x" to "presets/pixel_transparency/pixel_transparency-lcd3x.slangp",
         "LCD grid" to "presets/pixel_transparency/pixel_transparency-lcd-grid-v2.slangp",
         "Off" to "handheld/pixel_transparency.slangp",
-   )
+    )
     val handheldChoices: List<String> = listOf(TRUE_LCD) + lcds.keys.toList() + "Off"
     val uprightChoices = listOf("Right side down", "Left side down", "Keep it level")
+
+    /** Capcom fighters with six attack buttons (CPS1, CPS2 and their kin), by set name. */
+    val sixButton: Set<String> = setOf("sf2", "sf2ce", "sf2hf", "sf2t", "ssf2", "ssf2t", "ssf2x", "sfa", "sfa2", "sfa3", "sfz", "sfz2", "sfz3",
+        "vsav", "vsav2", "dstlk", "nwarr", "xmcota", "msh", "mshvsf", "xmvsf", "mvsc", "sfiii", "sfiii2", "sfiii3", "cybots", "sgemf")
+
+    /**
+     * Arcade switches set away from the board's factory defaults (each key names one game, so they sit in the core's
+     * shared file): Shinobi's text in English, as sold here; Ghouls'n Ghosts and Strider as two-player cabinets, so a
+     * second pad plays at the same time instead of taking turns on the first one's controls.
+     */
+    val arcadeSwitches: Map<String, String> = mapOf("fbneo-dipswitch-shinobi-Language" to "English",
+        "fbneo-dipswitch-ghouls-Cabinet" to "Upright 2 Players", "fbneo-dipswitch-strider-Cabinet" to "Upright 2P")
 
     /**
      * Arcade games made for a screen stood on its side. With the device turned, they fill the panel.
@@ -2110,11 +2226,11 @@ object RetroPack {
     val uprightSets: Set<String> = setOf(
         "pacman", "mspacman", "galaga", "dkong", "dkongjr", "dkong3", "invaders", "digdug", "1941", "1942", "1943", "19xx",
         "ddonpach", "donpachi", "dfeveron", "esprade", "guwange", "s1945", "s1945ii", "s1945iii", "gunbird", "gunbird2",
-        "galaxian", "galaga88", "gaplus", "xevious", "frogger", "centiped", "milliped", "qbert", "burgertm", "phoenix",
+        "galaxian", "galaga88", "gaplus", "xevious", "frogger", "centiped", "milliped", "qbert", "btime", "phoenix",
         "pooyan", "scramble", "gyruss", "timeplt", "ckong", "raiden", "raiden2", "raidendx", "truxton", "truxton2",
         "twincobr", "batsugun", "batrider", "bbakraid", "mahoudai", "shippumd", "varth", "gunnail", "aerofgt", "sonicwi",
         "ladybug", "mrdo", "zaxxon", "tutankhm", "bombjack", "arkanoid",
-   )
+    )
 
     /** RetroPad numbers: B 0, Y 1, Up 4, Down 5, Left 6, Right 7, A 8, X 9. */
     private fun turned(rightDown: Boolean): String {
@@ -2134,12 +2250,12 @@ object RetroPack {
         "Nestopia" to listOf("nes"), "Snes9x" to listOf("snes"), "Genesis Plus GX" to listOf("genesis", "mastersystem", "segacd"),
         "Beetle PCE" to listOf("tg16", "tg-cd"), "Stella" to listOf("atari2600"),
         "FinalBurn Neo" to listOf("arcade"), "MAME 2003-Plus" to listOf("arcade"),
-   )
+    )
     val handhelds = mapOf("Gambatte" to listOf("gb", "gbc"), "mGBA" to listOf("gba"))
     val threeD = mapOf(
         "Mupen64Plus-Next" to listOf("n64"), "Beetle Saturn" to listOf("saturn"), "Flycast" to listOf("dreamcast"),
         "SwanStation" to listOf("psx"), "Beetle PSX HW" to listOf("psx"),
-   )
+    )
 
     /** Game Boy Advance games whose cartridge had a sunlight sensor, by file name without its ending. */
     val solar = listOf("Boktai - The Sun Is in Your Hand (USA)", "Boktai 2 - Solar Boy Django (USA)")
@@ -2166,6 +2282,8 @@ object RetroPack {
         "video_fullscreen" to "true",
         "aspect_ratio_index" to "22",                   // the shape the core reports
         "video_scale_integer" to b(look.integer),
+        // Cores may turn the picture (the upright arcade games): RetroArch's own default, written outright.
+        "video_allow_rotate" to "true",
         "video_scale_integer_axis" to "0",
         "video_scale_integer_scaling" to "0",
         "video_smooth" to "false",
@@ -2265,7 +2383,7 @@ object RetroPack {
         "EXTERNAL" to "/storage/emulated/0/Android/data/${p.pkg}/files",
         "APK" to p.apk,
         "REFRESH" to look.hz.toString(),
-   )
+    )
 
     private fun cfg(map: Map<String, String>): String = map.entries.joinToString("") { (k, v) -> "$k = \"$v\"\n" }
 
@@ -2486,20 +2604,68 @@ object RetroPack {
     val multitap = setOf("CTR - Crash Team Racing (USA)", "Nickelodeon Rugrats - Search for Reptar (USA)")
 
     /**
-     * PlayStation games that need the geometry correction worked out on the processor too (PGXP "CPU" mode), from
-     * DuckStation's game database, which SwanStation does not carry. Without it Spyro's
-     * portals tear and Tekken 3's and Vagrant Story's models shake. Spyro the Dragon also needs culling off.
+     * What single PlayStation games need beyond the settings SwanStation already applies from its own short list of
+     * games (`libretro_game_settings.cpp`: Spyro's, Ape Escape's, Chrono Cross's and others'), from DuckStation's game
+     * database and its fixes (gathered 2026-10-28 and 2026-11-02). The geometry correction worked out on the processor
+     * too (PGXP "CPU" mode) where models shake or seams tear in the sharper look; the processor's instruction cache where
+     * a game runs too fast without it (Resident Evil 3's discs hang, Resident Evil 2 loses lines of dialogue, Crash 3
+     * its intro's sound). Metal Gear Solid with culling on lets Snake walk through walls. All of the geometry ones do
+     * nothing in the true picture, which has no PGXP. Not Xenogears or Wipeout XL: CPU mode moves their text a pixel,
+     * and SwanStation lacks DuckStation's way round that.
+     * Suikoden II reads a Suikoden save from the second card slot, as the console did (see [psxSecondCard]).
      */
     val psxFixes: Map<String, Map<String, String>> = mapOf(
         "Spyro the Dragon (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true", "swanstation_GPU_PGXPCulling" to "false"),
         "Spyro 2 - Ripto's Rage! (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true"),
         "Spyro - Year of the Dragon (USA) (Rev 1)" to mapOf("swanstation_GPU_PGXPCPU" to "true"),
         "Tekken 3 (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true", "swanstation_GPU_PGXPTolerance" to "3.0"),
-        "Vagrant Story (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true", "swanstation_GPU_PGXPTolerance" to "4.0"),
-        "Resident Evil 3 - Nemesis (USA, Canada)" to mapOf("swanstation_GPU_PGXPCPU" to "true"),
-   )
+        "Vagrant Story (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true", "swanstation_GPU_PGXPTolerance" to "4.0",
+            "swanstation_GPU_PGXPPreserveProjFP" to "true"),
+        "Resident Evil 3 - Nemesis (USA, Canada)" to mapOf("swanstation_GPU_PGXPCPU" to "true", "swanstation_CPU_RecompilerICache" to "true"),
+        "Resident Evil 2 - Dual Shock Ver. (USA)" to mapOf("swanstation_CPU_RecompilerICache" to "true"),
+        "Crash Bandicoot - Warped (USA)" to mapOf("swanstation_CPU_RecompilerICache" to "true"),
+        "Metal Gear Solid (USA) (Rev 1)" to mapOf("swanstation_GPU_PGXPCulling" to "false"),
+        "Spider-Man (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true", "swanstation_GPU_PGXPTolerance" to "3.0"),
+        "Valkyrie Profile (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true"),
+        "Twisted Metal 2 (USA)" to mapOf("swanstation_GPU_PGXPCPU" to "true"),
+        "Suikoden II (USA)" to mapOf("swanstation_MemoryCards_Card2Type" to "PerGameTitle"),
+    )
 
-    private fun swanstation(look: Look, sharp: Boolean, four: Boolean = false, stem: String? = null) = swanBase(look, sharp, four) + psxFixes[stem].orEmpty()
+    /**
+     * PlayStation games that start with the pad in analog mode: the racers only steer with the stick in analog mode, and
+     * the rest take the stick as it was meant to be used. Each one either switches analog on by itself on the console
+     * or asked the player to, and DuckStation starts these the same way (every game its database lists with the
+     * DualShock and not as "analog sticks do nothing"). Tekken 3, Einhander, Mega Man Legends, Twisted Metal 2 and
+     * Xenogears stay digital, as do games that switch it on themselves (Ape Escape, Spyro 3).
+     */
+    val psxAnalog: Set<String> = setOf(
+        "Gran Turismo 2 (USA) (Arcade Mode) (Rev 1)", "Gran Turismo 2 (USA) (Simulation Mode) (Rev 2)",
+        "R4 - Ridge Racer Type 4 (USA)", "CTR - Crash Team Racing (USA)", "Driver - You Are the Wheelman (USA) (Rev 1)",
+        "Metal Gear Solid (USA) (Rev 1)", "Syphon Filter (USA) (Rev 1)", "Medal of Honor (USA)",
+        "Crash Bandicoot 2 - Cortex Strikes Back (USA)", "Crash Bandicoot - Warped (USA)", "Spyro the Dragon (USA)",
+        "Resident Evil 2 - Dual Shock Ver. (USA)", "Resident Evil 3 - Nemesis (USA, Canada)", "Silent Hill (USA)",
+        "Vagrant Story (USA)", "Spider-Man (USA)", "Mega Man Legends 2 (USA)", "Tomba! (USA)",
+    )
+
+    /**
+     * PlayStation games sold as more than one disc that each kept their own data on one memory card: Gran Turismo 2's
+     * Arcade disc races the cars and tracks won on its Simulation disc. Here each disc has a card of its own, so the
+     * newest of the two is given to the other before it starts (see [PsxCard]).
+     */
+    val psxSharedCards: List<Set<String>> = listOf(
+        setOf("Gran Turismo 2 (USA) (Arcade Mode) (Rev 1)", "Gran Turismo 2 (USA) (Simulation Mode) (Rev 2)"))
+
+    /** Games that read another game's save from the second card slot: Suikoden II carries a Suikoden game's heroes over. */
+    val psxSecondCard: Map<String, String> = mapOf("Suikoden II (USA)" to "Suikoden (USA) (Rev 1)")
+
+    /** Every PlayStation game that gets an options file of its own. */
+    val psxOwn: Set<String> get() = multitap + psxFixes.keys + psxAnalog
+
+    private fun swanstation(look: Look, sharp: Boolean, stem: String? = null) = swanBase(look, sharp, stem in multitap) + psxFixes[stem].orEmpty() +
+        (if (stem in psxAnalog) (1..4).associate { "swanstation_Controller${it}_ForceAnalog" to "true" } else emptyMap())
+
+    private fun beetleFor(look: Look, sharp: Boolean, stem: String? = null) = beetlePsx(look, sharp, stem in multitap) +
+        (if (stem in psxAnalog) mapOf("beetle_psx_hw_analog_toggle" to "enabled-analog") else emptyMap())
 
     /**
      * PlayStation. The true picture is the console's own: 320 or so by 240, 15-bit colour with its 4 x 4 dither,
@@ -2518,6 +2684,10 @@ object RetroPack {
         // The DualShock (dualShock): in digital mode, as it powered on, the left stick also works the d-pad.
         "swanstation_Controller1_AnalogDPadInDigitalMode" to "true", "swanstation_Controller2_AnalogDPadInDigitalMode" to "true",
         "swanstation_Controller3_AnalogDPadInDigitalMode" to "true", "swanstation_Controller4_AnalogDPadInDigitalMode" to "true",
+        // The disc at the console's own speed and the console's own start. SwanStation lacks DuckStation's per-game
+        // limits, and faster discs break Symphony of the Night, Driver, Metal Gear Solid, Resident Evil 2 and 3, and
+        // the films of Final Fantasy VIII, Chrono Cross and others. These are the core's defaults, written outright.
+        "swanstation_CDROM_ReadSpeedup" to "1", "swanstation_CDROM_SeekSpeedup" to "1", "swanstation_BIOS_PatchFastBoot" to "false",
         "swanstation_Display_ShowOSDMessages" to "false")      // the core's own notes ("PGXP culling disabled..."), not wanted either
     private fun beetlePsx(look: Look, sharp: Boolean, four: Boolean = false) = mapOf(
         "beetle_psx_hw_enable_multitap_port1" to if (four) "enabled" else "disabled",
@@ -2526,6 +2696,9 @@ object RetroPack {
         "beetle_psx_hw_depth" to if (sharp) "32bpp" else "16bpp(native)",
         "beetle_psx_hw_dither_mode" to if (sharp) "disabled" else "1x(native)",
         "beetle_psx_hw_pgxp_mode" to if (sharp) "memory only" else "disabled",
+        // Textures drawn in perspective with PGXP, as SwanStation does by default: without it the sharper look's
+        // textures would still warp in this core alone.
+        "beetle_psx_hw_pgxp_texture" to if (sharp) "enabled" else "disabled",
         "beetle_psx_hw_filter" to "nearest",
         // The DualShock (dualShock) as it was: digital at power-on, analog when a game asks for it or the combo is held.
         "beetle_psx_hw_analog_toggle" to "enabled",
@@ -2564,7 +2737,7 @@ object RetroPack {
         // and its black frame stayed up for 25 to 40 ms at a time: an uneven dark flicker (Banjo-Tooie on a Retroid Pocket
         // Nova: 205 late pictures in 10 s without, none with).
         "mupen64plus-FrameDuping" to "True",
-   )
+    )
 
     /**
      * Nintendo 64: the core puts the N64's A on the bottom face button and its B on the left one. This puts them on the
@@ -2592,11 +2765,60 @@ object RetroPack {
      * 517 (read from the cores). It powers on in digital mode, as the real one did; a game that wants the sticks turns
      * them on itself.
      */
-    fun dualShock(device: Int): String = (1..4).joinToString("") { "input_libretro_device_p$it = \"$device\"\n" }
+    fun dualShock(device: Int): String = padsOf(device)
 
-    /** A Game Boy game that saves only with A, B, START and SELECT together, the combination that also leaves: Link's Awakening. */
-    fun savesOnAllFour(system: String, name: String): Boolean =
-        system in setOf("gb", "gbc") && name.lowercase().let { "link's awakening" in it || "new awakening" in it }
+    /** A remap that plugs controller [device] (a libretro device id) into all four ports. */
+    fun padsOf(device: Int): String = (1..4).joinToString("") { "input_libretro_device_p$it = \"$device\"\n" }
+
+    /**
+     * Saturn games made for the 3D Control Pad (their discs list it): its stick, analog L and R, and the game reading
+     * them as it did. NiGHTS above all. Per game only: Mednafen warns that analog mode does not suit every game. SELECT
+     * switches the pad between analog and digital, as the pad's own switch did. (Beetle Saturn's 3D pad, device 261.)
+     */
+    val saturn3dPad: Set<String> = setOf("Nights into Dreams... (USA) (with 3D Control Pad)", "Burning Rangers (USA)",
+        "Panzer Dragoon Saga (USA)", "Shining Force III (USA)")
+
+    /**
+     * Dreamcast games that need something Flycast's own list of games does not give them (gathered 2026-11-02, Flycast's
+     * bug tracker). Crazy Taxi's Crazy Box frames break up at the console's own 640 x 480 on Adreno (flycast #1804);
+     * Capcom's 2D fighters warp and tear when drawn sharper (#466), the setting's own note names them.
+     */
+    val dcFixes: Map<String, Map<String, String>> = mapOf(
+        "Crazy Taxi (USA)" to mapOf("reicast_native_depth_interpolation" to "enabled"),
+        "Marvel vs. Capcom 2 (USA)" to mapOf("reicast_fix_upscale_bleeding_edge" to "disabled"),
+        "Street Fighter III - 3rd Strike (USA)" to mapOf("reicast_fix_upscale_bleeding_edge" to "disabled"),
+    )
+
+    /**
+     * A handheld game that uses START and SELECT together with other buttons, the combination that also leaves: Link's
+     * Awakening saves with A, B, START and SELECT; the Pokemon games reset with A and B (L and R on the DS) and both.
+     * These leave on a second press instead, so the game sees the first.
+     */
+    fun savesOnAllFour(system: String, name: String): Boolean = name.lowercase().let { n ->
+        (system in setOf("gb", "gbc") && ("link's awakening" in n || "new awakening" in n)) ||
+            (system in setOf("gb", "gbc", "gba", "nds") && n.startsWith("pokemon") &&
+                listOf("pinball", "puzzle", "trading card", "mystery dungeon").none { it in n })
+    }
+
+    /** The RetroArch cores a handheld system's games may open in, by the folder their own settings go in. */
+    private val handheldCores = mapOf("gb" to listOf("Gambatte", "mGBA"), "gbc" to listOf("Gambatte", "mGBA"),
+        "gba" to listOf("mGBA"), "nds" to listOf("melonDS DS"))
+
+    /**
+     * Game Boy Color games with more in them on a Game Boy Advance, which the cartridge looked for: the Oracles' Advance
+     * Shop, Shantae's dance, Wendy's Advance World. Run as that console (Gambatte's own note on the setting names them).
+     */
+    val gbaEnhanced: Set<String> = setOf("Legend of Zelda, The - Oracle of Ages (USA, Australia)",
+        "Legend of Zelda, The - Oracle of Seasons (USA, Australia)", "Shantae (USA)", "Wendy - Every Witch Way (USA, Europe)")
+
+    /** DS games played mostly on the touch screen, which start with it large, and games played across both screens at once. */
+    val dsTouchFirst: Set<String> = setOf("Kirby - Canvas Curse (USA)", "Elite Beat Agents (USA)",
+        "Professor Layton and the Curious Village (USA, Australia)", "Ghost Trick - Phantom Detective (USA) (En,Fr,De,Es,It)")
+    val dsBothScreens: Set<String> = setOf("Sonic Rush (USA) (En,Ja,Fr,De,Es,It)", "Contra 4 (USA)", "World Ends with You, The (USA)")
+
+    /** DS games that need a setting of their own: Order of Ecclesia sticks after its intro with the JIT's literal optimizations (melonDS #2459). */
+    val dsFixes: Map<String, Map<String, String>> = mapOf(
+        "Castlevania - Order of Ecclesia (USA) (En,Fr)" to mapOf("melonds_jit_literal_optimisations" to "disabled"))
 
     /**
      * Dreamcast. The true picture is its own 640 x 480 with plain texture filtering, as the console drew it; the sharper
@@ -2608,14 +2830,55 @@ object RetroPack {
         "reicast_anisotropic_filtering" to if (sharp) "16" else "off",
         "reicast_cable_type" to if (look.signalOf("dreamcast") == "VGA") "VGA" else "TV (Composite)")
 
-    /** Nintendo 64 games that need a frame copy GLideN64's own list gives them upstream but this core's copy does not. */
-    val n64Fixes: Map<String, Map<String, String>> = mapOf(
-        "Legend of Zelda, The - Majora's Mask (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),   // the Lens of Truth and the pause screen
-        "Paper Mario (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),      // its intro (the core's own note on the option)
-   )
+    /**
+     * Nintendo 64 games made for the Rumble Pak that keep nothing on a Controller Pak (the core's own game list: rumble,
+     * and no Controller Pak saves). The core plugs a Controller Pak into port 1 and nothing into the others, so these
+     * never shook. Every port gets one; a game for fewer players never looks at the rest. The games that save to a
+     * Controller Pak keep it: on the console too, the pak holding the saves took the slot.
+     */
+    private val rumbleGames = setOf("1080 Snowboarding (Japan, USA) (En,Ja)", "Banjo-Kazooie (USA) (Rev 1)", "Banjo-Tooie (USA)",
+        "Conker's Bad Fur Day (USA)", "Donkey Kong 64 (USA)", "F-Zero X (USA)", "GoldenEye 007 (USA)", "Jet Force Gemini (USA)",
+        "Kirby 64 - The Crystal Shards (USA)", "Legend of Zelda, The - Majora's Mask (USA)", "Legend of Zelda, The - Ocarina of Time (USA) (Rev 2)",
+        "Mario Golf (USA)", "Mario Party 2 (USA)", "Mario Party 3 (USA)", "Mario Tennis (USA)", "Paper Mario (USA)",
+        "Rocket - Robot on Wheels (USA)", "Snowboard Kids 2 (USA)", "Star Fox 64 (USA) (Rev 1)", "Star Wars - Rogue Squadron (USA) (Rev 1)",
+        "Star Wars Episode I - Racer (USA)", "Super Smash Bros. (USA)", "Tsumi to Batsu - Hoshi no Keishousha (Japan)",
+        "WCW-nWo Revenge (USA)", "Yoshi's Story (USA) (En,Ja)")
+
+    /** Killer Instinct Gold: its six attacks, four of them on the C buttons, put on six buttons of their own (n64Remap). */
+    const val KI_GOLD = "Killer Instinct Gold (USA) (Rev 2)"
+
+    /**
+     * Nintendo 64 games with settings of their own: the Rumble Pak, and frame copies GLideN64's own list gives them
+     * upstream but this core's older copy of it does not (gathered 2026-11-02, GLideN64's commits and bug tracker).
+     * A game run lighter carries them too (files, "Run lighter").
+     */
+    val n64Fixes: Map<String, Map<String, String>> = run {
+        val own = mapOf(
+            "Legend of Zelda, The - Majora's Mask (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),   // the Pictograph Box's delay (GLideN64 a04081ad6a)
+            "Paper Mario (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),      // its intro (the core's own note on the option)
+            "Banjo-Kazooie (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyColorToRDRAM" to "Sync"),   // the jigsaw transitions (GLideN64 e8a5e8292b)
+            // Black patches, and with the faster blending the banners and logo gone too (GLideN64 #2948, the core's maintainer)
+            "Blast Corps (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True", "mupen64plus-EnableLegacyBlending" to "False"),
+            "Mario Tennis (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),    // the last match's names left on the scoreboard (#2952)
+            KI_GOLD to mapOf("mupen64plus-alt-map" to "True"),                               // every C button on a button of its own
+        )
+        val shake = (1..4).associate { "mupen64plus-pak$it" to "rumble" }
+        (rumbleGames + own.keys).associateWith { (if (it in rumbleGames) shake else emptyMap()) + own[it].orEmpty() }
+    }
+
+    /**
+     * Killer Instinct Gold's buttons, every player: punches on Y, X and R1 and kicks on B, A and R2, light to hard (by
+     * place on an Xbox controller too). The core's other layout (n64Fixes) has the N64's A on the bottom button, B on the
+     * left, C-down on the right, C-up on the top, C-left on L1 and C-right on R1; the game's punches are B, C-left and
+     * C-up, its kicks A, C-down and C-right. A game's own remap takes the place of the core's, so every line is given.
+     */
+    fun n64Remap(): String = buildString {
+        for (player in 1..4) for ((button, id) in listOf("y" to 1, "x" to 10, "r" to 9, "b" to 0, "a" to 8, "r2" to 11))
+            append("input_player${player}_btn_$button = \"$id\"\n")
+    }
 
     fun files(look: Look, p: Paths, pal: List<Pair<String, String>> = emptyList(), arcade: List<String> = emptyList(),
-              handheld: List<Pair<String, String>> = emptyList()): Map<String, String> {
+              handheld: List<Pair<String, String>> = emptyList(), gb: GbLooks.Setup? = null): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         // Upright arcade games: the core turns the picture for those games only, and each gets its turned controls. On a
         // television, which cannot be turned, they stand upright in the middle of the screen with their usual controls.
@@ -2628,7 +2891,11 @@ object RetroPack {
             !turn -> "disabled"
             look.upright == "Right side down" -> "TATE alternate"
             else -> "TATE"
-        }))
+        }) + arcadeSwitches)
+        // Capcom's six-button fighters on the arcade's two rows of three: light and medium on the face buttons, heavy on
+        // R1 (punch) and R2 (kick), as on a fight pad. FinalBurn Neo's "Modern" layout, device 517; its "Classic" one put
+        // heavy punch on L1, the Super Nintendo's way.
+        for (set in arcade) if (set.lowercase() in sixButton) out["remaps/FinalBurn Neo/$set.rmp"] = "input_libretro_device_p1 = \"517\"\ninput_libretro_device_p2 = \"517\"\n"
         if (turn) for (set in arcade) if (set.lowercase() in uprightSets)
             out["remaps/FinalBurn Neo/$set.rmp"] = turned(look.upright == "Right side down")
         look.speakers?.let { out["speakers.dsp"] = Eq.dsp(it) }
@@ -2668,7 +2935,23 @@ object RetroPack {
         out["Gambatte/Gambatte.opt"] = cfg(gambatte(look, gbc = true))
         out["Gambatte/gbc.opt"] = cfg(gambatte(look, gbc = true))
         out["Gambatte/gb.opt"] = cfg(gambatte(look, gbc = false))
-        if (trueLcd) out["Gambatte/gb.slangp"] = gbScreen(p)
+        // Game Boy games with their three looks (GbLooks), changed with L1 and R1: the core draws each in code colours,
+        // from a palette file of its own, and it starts in the look it was left in. Any other Game Boy game opened in the
+        // core (one put on the card since the library was read) has the original screen, read the same way.
+        // The looks are handed over for every Game Boy game when the handhelds are shown as their own screens; with another
+        // screen, only for a game RetroArch still has open, which keeps its own files until it closes (Store.retroSetup).
+        val looks = gb
+        if (trueLcd) out["Gambatte/gb.slangp"] = looks?.let { "#reference \"${it.folder}\"\n" } ?: gbScreen(p)
+        val gbOwn = LinkedHashMap<String, Map<String, String>>()
+        if (looks != null) for ((stem, start) in looks.start) {
+            out["Gambatte/$stem.slangp"] = "#reference \"$start\"\n"
+            // Drawn as a Game Boy in code colours whatever screen the handhelds have: a game handed over while RetroArch
+            // still holds it (another screen chosen since) must not be read in colour or with frames mixed.
+            out["Gambatte/$stem.opt"] = cfg(gambatte(look.copy(handheld = TRUE_LCD), gbc = false) + ("gambatte_gb_colorization" to "custom"))
+            gbOwn[stem] = mapOf("video_shader_dir" to start.substringBeforeLast('/'),
+                "input_shader_prev_btn" to GbLooks.PREVIOUS, "input_shader_next_btn" to GbLooks.NEXT)
+            out["Gambatte/$stem.cfg"] = cfg(gbOwn.getValue(stem))
+        }
         // A Game Boy or Game Boy Color game moved to mGBA (Settings, Emulators) keeps the unlit screen too.
         if (look.transparency && !trueLcd) transparent[look.handheld]?.let { t ->
             for (system in listOf("gb", "gbc")) out["mGBA/$system.slangp"] = "#reference \"${p.slang}/$t\"\n"
@@ -2778,12 +3061,14 @@ object RetroPack {
         out["Beetle PSX HW/Beetle PSX HW.opt"] = cfg(beetlePsx(look, look.sharp))
         out["Mupen64Plus-Next/Mupen64Plus-Next.opt"] = cfg(mupen(true, n64Parallel(look)))
         out["remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp"] = n64Buttons()
+        out["remaps/Mupen64Plus-Next/$KI_GOLD.rmp"] = n64Remap()
         out["remaps/SwanStation/SwanStation.rmp"] = dualShock(261)
         out["remaps/Beetle PSX HW/Beetle PSX HW.rmp"] = dualShock(517)
         // Link's Awakening saves only with A, B, START and SELECT together, which would close the game first: START and
         // SELECT leave it when pressed twice (RetroArch says so after the first).
         for ((system, stem) in handheld) if (savesOnAllFour(system, stem))
-            for (core in listOf("Gambatte", "mGBA")) out["$core/$stem.cfg"] = cfg(mapOf("quit_press_twice" to "true"))   // either may be chosen for them
+            for (core in handheldCores[system].orEmpty())    // any may be chosen for them
+                out["$core/$stem.cfg"] = cfg(mapOf("quit_press_twice" to "true") + if (core == "Gambatte" && system == "gb") gbOwn[stem].orEmpty() else emptyMap())
         // Dreamcast: a memory card of its own for every game, kept with the other saves. The core's usual way is one
         // card shared by all of them, in the system folder where the backup does not look, and 200 blocks fill up fast.
         out["Flycast/Flycast.opt"] = cfg(flycast(look, look.sharp))
@@ -2795,21 +3080,22 @@ object RetroPack {
             val stem = key.substringAfter('/')
             val sharp = look.sharp && !light
             when (system) {
-                "psx" -> { out["SwanStation/$stem.opt"] = cfg(swanstation(look, sharp, stem in multitap, stem)); out["Beetle PSX HW/$stem.opt"] = cfg(beetlePsx(look, sharp, stem in multitap)) }
+                "psx" -> { out["SwanStation/$stem.opt"] = cfg(swanstation(look, sharp, stem)); out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, sharp, stem)) }
                 "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(!light, n64Parallel(look)) + n64Fixes[stem].orEmpty())
-                "dreamcast" -> out["Flycast/$stem.opt"] = cfg(flycast(look, sharp))
+                "dreamcast" -> out["Flycast/$stem.opt"] = cfg(flycast(look, sharp) + dcFixes[stem].orEmpty())
             }
         }
-        // Four players: a game's own file with the multitap in, carrying every other setting the core's does.
-        for (stem in multitap) if ("psx/$stem" !in look.lighter) {
-            out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, four = true, stem = stem))
-            out["Beetle PSX HW/$stem.opt"] = cfg(beetlePsx(look, look.sharp, four = true))
+        // PlayStation games with something of their own (the multitap, a fix, analog at power-on): a file of their own in
+        // each core, carrying every other setting the core's does.
+        for (stem in psxOwn) if ("psx/$stem" !in look.lighter) {
+            out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, stem))
+            out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, look.sharp, stem))
         }
         for ((stem, fix) in n64Fixes) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + fix)
-        // The games that need PGXP on the processor: a file of their own, carrying every other setting the core's does.
-        for (stem in psxFixes.keys) if ("psx/$stem" !in look.lighter && stem !in multitap) {
-            out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, stem = stem))
-        }
+        for ((stem, fix) in dcFixes) if ("dreamcast/$stem" !in look.lighter) out["Flycast/$stem.opt"] = cfg(flycast(look, look.sharp) + fix)
+        // Rayman 2 does not start with achievements on (flycast #2566): that one game goes without them.
+        out["Flycast/Rayman 2 - The Great Escape (USA) (En,Fr,De,Es,It).cfg"] = cfg(mapOf("cheevos_enable" to "false"))
+        for (stem in saturn3dPad) out["remaps/Beetle Saturn/$stem.rmp"] = padsOf(261)
         // Saturn's interlaced hi-res games (Virtua Fighter 2's 704 x 480): each field drawn on its own lines, as a television
         // drew them, instead of the core's usual weave, which shows both at once and combs anything that moves.
         out["Beetle Saturn/Beetle Saturn.opt"] = cfg(mapOf("beetle_saturn_deinterlacer" to "bob_offset"))
@@ -2825,10 +3111,70 @@ object RetroPack {
         // large with the touch screen small beside it, the reverse, the top screen alone (exactly five times its size on
         // this panel), the touch screen alone, and both stacked. Whole-number scaling is off so each one fills the
         // panel, with a filter that keeps pixels even and sharp at any size.
-        out["melonDS DS/melonDS DS.opt"] = cfg(mapOf(
-            "melonds_number_of_screen_layouts" to "5",
-            "melonds_screen_layout1" to "largescreen-top", "melonds_screen_layout2" to "largescreen-bottom",
-            "melonds_screen_layout3" to "top", "melonds_screen_layout4" to "bottom", "melonds_screen_layout5" to "top-bottom",
+        out["melonDS DS/melonDS DS.opt"] = cfg(melonDs(DS_LAYOUTS))
+        // Games of their own: the touch screen large first, or both screens at once first; the same five either way.
+        for (stem in dsTouchFirst) out["melonDS DS/$stem.opt"] = cfg(melonDs(listOf("largescreen-bottom", "largescreen-top", "bottom", "top", "top-bottom")))
+        for (stem in dsBothScreens) out["melonDS DS/$stem.opt"] = cfg(melonDs(listOf("top-bottom", "largescreen-top", "largescreen-bottom", "top", "bottom")))
+        for ((stem, fix) in dsFixes) out["melonDS DS/$stem.opt"] = cfg(melonDs(DS_LAYOUTS) + fix)
+        // The buttons the controls note gives (R2 the layouts, R3 a touch at the pointer, L2 the microphone, L3 the
+        // pointer's speed-up and, with Y, the lid). This core moved them in 2025 (R3 layouts, R2 touch, L3 microphone).
+        out["remaps/melonDS DS/melonDS DS.rmp"] = "input_player1_btn_r2 = \"15\"\ninput_player1_btn_r3 = \"13\"\n" +
+            "input_player1_btn_l2 = \"14\"\ninput_player1_btn_l3 = \"12\"\n"
+        // Not one of the 8 and 16-bit systems lag reduction is for: a DS state is several megabytes to copy every frame.
+        out["melonDS DS/melonDS DS.cfg"] = cfg(old + lagOff + quickSound + mapOf("video_scale_integer" to "false", "video_smooth" to "false"))
+        out["melonDS DS/melonDS DS.slangp"] = dsScreen(p)
+        // NES: the core's composite-video filter stays off. The CRT shader is the television here; both at once blur
+        // the picture twice and widen it to 602 columns. (It was found switched on in a test device's stored options.)
+        // Its palette is set too: Sony's CXA2025AS decoder in its American setting, the colour an American television made
+        // of the NES's signal. The core's own default changed (to "royaltea", 2026-08-29), so left alone the colours would
+        // depend on when the core was built. Its pixels at their own 8:7 shape, and the 8 lines top and bottom a set hid.
+        out["Nestopia/Nestopia.opt"] = cfg(NESTOPIA)
+        // The three-in-one cartridge: the core's game list gives its second port a Power Pad, which the core cannot read,
+        // so Duck Hunt and Luigi had no controls at all. On the handheld the second port is the Zapper, aimed and fired
+        // by touching the screen, with every line of the picture shown so the shot lands under the finger. Docked, where
+        // there is no touch, it is a pad, for Luigi.
+        val threeInOne = "Super Mario Bros. + Duck Hunt + World Class Track Meet (USA)"
+        out["remaps/Nestopia/$threeInOne.rmp"] = "input_libretro_device_p2 = \"${if (look.tv) 257 else 262}\"\n"
+        if (!look.tv) out["Nestopia/$threeInOne.opt"] = cfg(NESTOPIA + ("nestopia_overscan_v_top" to "0"))
+        // SNES pixels at their own 8:7 shape: the core's usual 4:3 drew them 2% too wide.
+        out["Snes9x/Snes9x.opt"] = cfg(mapOf("snes9x_aspect" to "ntsc"))
+        // TurboGrafx: the colours its composite output decoded to, measured for the core; RGB keeps the chip's own.
+        out["Beetle PCE/Beetle PCE.opt"] = cfg(mapOf("pce_palette" to if (look.signalOf("tg16") == "RGB") "RGB" else "Composite"))
+        // L2 switches the core's pad to six buttons, which no HuCard here was made for (the core warns they misbehave),
+        // with nothing on screen but a passing message: unassigned for the HuCards. (Some CD games do use six.)
+        out["remaps/Beetle PCE/tg16.rmp"] = (1..5).joinToString("") { "input_player${it}_btn_l2 = \"-1\"\n" }
+        // Atari 2600: Stella's own television filter, made for the console, for its signal; and no blending of games that
+        // flicker objects at 30 a second, which flickered on a tube too (its phosphors faded in a few milliseconds).
+        out["Stella/Stella.opt"] = cfg(mapOf("stella_filter" to when (look.signalOf("atari2600")) { "RGB" -> "disabled"; "S-video" -> "s-video"; else -> "composite" },
+            "stella_phosphor" to "off"))
+        // The Game Boy Advance's colour is done by its screen's shader (gbaScreen), not the core, so the core's is off.
+        out["mGBA/mGBA.opt"] = cfg(MGBA)
+        // Boktai's cartridge had a sunlight sensor, and without any sun the game cannot be played. It starts at half
+        // sun; R3 and L3 turn it up and down while playing. (A file named after a game holds that game's core options
+        // in place of the core's own, so the core's are repeated in it.)
+        for (boktai in RetroPack.solar) out["mGBA/$boktai.opt"] = cfg(MGBA + ("mgba_solar_sensor_level" to "5"))
+        // Game Boy Color games that look for a Game Boy Advance, in either core.
+        for (stem in gbaEnhanced) {
+            out["Gambatte/$stem.opt"] = cfg(gambatte(look, gbc = true) + ("gambatte_gb_hwmode" to "GBA"))
+            out["mGBA/$stem.opt"] = cfg(MGBA + ("mgba_gb_model" to "Game Boy Advance"))
+        }
+        // WarioWare: Twisted! is played by turning the handheld: RetroArch hands cores the motion sensors only when asked.
+        out["mGBA/WarioWare - Twisted! (USA).cfg"] = cfg(mapOf("input_sensors_enable" to "true"))
+        return out
+    }
+
+    private val DS_LAYOUTS = listOf("largescreen-top", "largescreen-bottom", "top", "bottom", "top-bottom")
+    private val MGBA = mapOf("mgba_interframe_blending" to "mix", "mgba_color_correction" to "OFF")
+    private val NESTOPIA = mapOf("nestopia_blargg_ntsc_filter" to "disabled", "nestopia_palette" to "cxa2025as", "nestopia_aspect" to "auto")
+
+    /**
+     * melonDS DS, with [layouts] in the order R2 steps through them: by default the top screen large with the touch screen
+     * small beside it, the reverse, the top screen alone (exactly five times its size on this panel), the touch screen
+     * alone, and both stacked.
+     */
+    private fun melonDs(layouts: List<String>): Map<String, String> =
+        mapOf("melonds_number_of_screen_layouts" to layouts.size.toString()) +
+            layouts.mapIndexed { i, l -> "melonds_screen_layout${i + 1}" to l }.toMap() + mapOf(
             "melonds_hybrid_ratio" to "2",
             // The core's "Layout 1/5" label never leaves the corner, which an OLED panel would remember.
             "melonds_show_current_layout" to "disabled",
@@ -2840,32 +3186,13 @@ object RetroPack {
             // The DS clock is kept on the device's clock. The core's usual way sets it once when a game starts and lets
             // it run on from there, but a game is resumed here from the place it was left, clock and all: the clock
             // would then fall behind by every hour the device was off, and Pokemon's days would stop passing.
-            "melonds_start_time_mode" to "sync"))
-        // Not one of the 8 and 16-bit systems lag reduction is for: a DS state is several megabytes to copy every frame.
-        out["melonDS DS/melonDS DS.cfg"] = cfg(old + lagOff + quickSound + mapOf("video_scale_integer" to "false", "video_smooth" to "false"))
-        out["melonDS DS/melonDS DS.slangp"] = dsScreen(p)
-        // NES: the core's composite-video filter stays off. The CRT shader is the television here; both at once blur
-        // the picture twice and widen it to 602 columns. (It was found switched on in a test device's stored options.)
-        // Its palette is set too: Sony's CXA2025AS decoder in its American setting, the colour an American television made
-        // of the NES's signal. The core's own default changed (to "royaltea", 2026-08-29), so left alone the colours would
-        // depend on when the core was built. Its pixels at their own 8:7 shape, and the 8 lines top and bottom a set hid.
-        out["Nestopia/Nestopia.opt"] = cfg(mapOf("nestopia_blargg_ntsc_filter" to "disabled", "nestopia_palette" to "cxa2025as", "nestopia_aspect" to "auto"))
-        // SNES pixels at their own 8:7 shape: the core's usual 4:3 drew them 2% too wide.
-        out["Snes9x/Snes9x.opt"] = cfg(mapOf("snes9x_aspect" to "ntsc"))
-        // TurboGrafx: the colours its composite output decoded to, measured for the core; RGB keeps the chip's own.
-        out["Beetle PCE/Beetle PCE.opt"] = cfg(mapOf("pce_palette" to if (look.signalOf("tg16") == "RGB") "RGB" else "Composite"))
-        // Atari 2600: Stella's own television filter, made for the console, for its signal; and no blending of games that
-        // flicker objects at 30 a second, which flickered on a tube too (its phosphors faded in a few milliseconds).
-        out["Stella/Stella.opt"] = cfg(mapOf("stella_filter" to when (look.signalOf("atari2600")) { "RGB" -> "disabled"; "S-video" -> "s-video"; else -> "composite" },
-            "stella_phosphor" to "off"))
-        // The Game Boy Advance's colour is done by its screen's shader (gbaScreen), not the core, so the core's is off.
-        out["mGBA/mGBA.opt"] = cfg(mapOf("mgba_interframe_blending" to "mix", "mgba_color_correction" to "OFF"))
-        // Boktai's cartridge had a sunlight sensor, and without any sun the game cannot be played. It starts at half
-        // sun; R3 and L3 turn it up and down while playing. (A file named after a game holds that game's core options
-        // in place of the core's own, so the core's are repeated in it.)
-        for (boktai in RetroPack.solar) out["mGBA/$boktai.opt"] = cfg(mapOf("mgba_interframe_blending" to "mix", "mgba_color_correction" to "OFF", "mgba_solar_sensor_level" to "5"))
-        return out
-    }
+            "melonds_start_time_mode" to "sync",
+            // RetroArch on Android has no microphone of its own to hand the core (melonds-ds #184), so the microphone
+            // button blows into it instead, which is what the DS games ask for (Phoenix Wright's fingerprints, Bowser's
+            // fire breath). Held: blows while the button is down.
+            "melonds_mic_input" to "blow", "melonds_mic_input_active" to "hold",
+            // The right stick's pointer shown for three seconds after it moves: Android builds hide it, so it moved unseen.
+            "melonds_show_cursor" to "timeout", "melonds_cursor_timeout" to "3")
 
     /**
      * Arcade sets whose boards run well away from 60 pictures a second (Midway's at 54.7, Irem's M72 at 55, Rampage
@@ -3428,29 +3755,94 @@ object ControlsNote {
         "ra:fbneo" to "SELECT puts in a coin and START starts.",
         "ra:mupen64plus_next_gles3" to "A and B are the console's A and B. The right stick is the C buttons and L2 is Z. Hold R2 to use the face buttons as C buttons.",
         "ra:melondsds" to "R2 changes how the two screens sit. Touch the screen, or steer a pointer with the right stick and press it in. L2 is the microphone.",
-   )
+    )
     private const val CUBE = "The right stick is the C stick, R1 is Z, and L2 and R2 are the triggers."
     private const val REMOTE = "Left stick: the Nunchuk. Right stick: pointing. R1 shakes the remote and L3 the Nunchuk; L1 is C, L2 is Z, X and Y are 1 and 2."
     private val wiiOwn = mapOf(
         "super smash bros. brawl" to "Played on the GameCube layout: the right stick is the C stick and R1 is Z.",
         "mario kart wii" to "Played on the GameCube layout: the right stick is the C stick and R1 is Z.",
-        "punch-out!!" to "The remote is held sideways: the d-pad moves, X and Y are 1 and 2.",
-   )
+        "punch-out!!" to "The remote is held sideways: B and A punch left and right, X is the Star Punch, and the d-pad dodges.",
+        "xenoblade chronicles" to "Played on the Classic Controller: L1 and R1 are L and R, L2 and R2 are ZL and ZR.",
+        "metroid prime 3 - corruption" to "$REMOTE Hold R2 and move the right stick to push, pull and twist handles.",
+        "super mario galaxy" to "$REMOTE Hold R2 to stand the remote up, and tilt it with the left stick.",
+        "super mario galaxy 2" to "$REMOTE Hold R2 to stand the remote up, and tilt it with the left stick.",
+        "new super mario bros. wii" to "$REMOTE The right stick tilts the remote, for tilting platforms.",
+        "legend of zelda, the - skyward sword" to "$REMOTE The right stick swings the sword; hold R2 and use the left stick to tilt. " +
+            "Aiming the sword and flying want a real remote, so it is only roughly playable here.",
+        "donkey kong country returns" to "$REMOTE Tap R1 to roll or pound rather than holding it, which can stop Dolphin.",
+        "warioware - smooth moves" to "Its microgames are poses held with a real remote: most of them cannot be done on this handheld.",
+    )
+    /** GameCube games with something of their own to say. */
+    private val cubeOwn = mapOf(
+        "animal crossing" to "The Game Boy Advance link extras cannot be used here; the rest of the game is all there.",
+        "legend of zelda, the - the wind waker" to "The Tingle Tuner, played on a linked Game Boy Advance, cannot be used here.",
+        "metroid prime" to "The Metroid Fusion link extras cannot be used here; the rest of the game is all there.",
+        "prince of persia - the sands of time" to "The Game Boy Advance link extra cannot be used here.",
+        "luigi's mansion" to "It starts from its title every time, since loading a kept place breaks its memory card: save in the game.",
+    )
+    /** RetroArch games with something of their own to say, by system and then by name (Titles.base). */
+    private val retroOwn: Map<String, Map<String, String>> = run {
+        val stadium = "Rental Pokémon play as normal. The GB Tower and your own Game Boy Pokémon need a Transfer Pak, which is not set up here."
+        val noRumble = "No rumble: its saves are on the Controller Pak, which takes the slot, as on the console."
+        val threeD = "SELECT switches the 3D Control Pad between analog and digital."
+        val sun = "R3 and L3 turn the sun up and down."
+        mapOf(
+            "n64" to mapOf(
+                "killer instinct gold" to "Punches are Y, X and R1 and kicks are B, A and R2, light to hard. On an Xbox controller, " +
+                    "punches are X, Y and RB and kicks are A, B and RT.",
+                "diddy kong racing" to "No rumble: its time trial ghosts are kept on the Controller Pak, which takes the slot, as on the console.",
+                "pokemon snap" to "Professor Oak's check of your photos does not work in this emulator yet.",
+                "pokemon stadium" to stadium, "pokemon stadium 2" to stadium,
+                "mario kart 64" to "In split-screen the small course map can look wrong.",
+                "star wars - shadows of the empire" to "The space levels have a plain black sky, without their stars.",
+                "kirby 64 - the crystal shards" to "The health display can lag behind, and can lose its frame when you come back to a kept place.",
+            ) + listOf("beetle adventure racing!", "goemon's great adventure", "mystical ninja starring goemon", "nfl blitz 2000",
+                "san francisco rush 2049", "snowboard kids", "turok 2 - seeds of evil").associateWith { noRumble },
+            "nes" to mapOf(
+                "super mario bros. + duck hunt + world class track meet" to "Duck Hunt: touch the screen to shoot; docked, the second pad plays Luigi instead. " +
+                    "World Class Track Meet needs the Power Pad mat, which cannot be used here.",
+                "startropics" to "When Nav-Com asks for the Sub-C frequency in Chapter 4, it is 747.",
+            ),
+            "psx" to mapOf("metal gear solid" to "Meryl's codec frequency is 140.15. For Psycho Mantis, do as the game says and move your pad to " +
+                "port 2: Quick Menu, Controls, Port 1 Controls, Mapped Port 2. Set it back after the fight."),
+            "arcade" to mapOf("robotron" to "Move with the left stick and fire with the right stick.",
+                "outrun" to "Steer with the stick or the d-pad. R2 is the gas, L2 the brake, and B changes gear."),
+            "saturn" to mapOf("nights into dreams..." to threeD, "panzer dragoon saga" to threeD, "shining force iii" to threeD,
+                "burning rangers" to "$threeD Some text on screen can flicker, which the emulator does not get right yet."),
+            "dreamcast" to mapOf("bangai-o" to "Without the console's own BIOS, firing a lot can slow it down heavily.",
+                "legacy of kain - soul reaver" to "This disc has left and right sound swapped, as it did on the console: choose Mono in its sound options."),
+            "gbc" to mapOf("mario tennis" to "Yoshi, Wario, Waluigi and Bowser were unlocked through the N64 game's Transfer Pak, so they cannot be unlocked here."),
+            "gba" to mapOf("warioware - twisted!" to "Played by turning the handheld itself, so it cannot be played docked.",
+                "boktai - the sun is in your hand" to sun, "boktai 2 - solar boy django" to sun),
+            "nds" to mapOf("phoenix wright - ace attorney" to "In the fifth case, hold L2 to blow the fingerprint powder away.",
+                "mario & luigi - bowser's inside story" to "In the giant battles, hold L2 where the game asks you to blow. " +
+                    "Moving between rooms takes a few seconds in this emulator."),
+        )
+    }
+    /** Games whose own note takes the place of the core's (Killer Instinct Gold's buttons are its own, RetroPack.n64Remap). */
+    private val ownButtons = setOf("n64" to "killer instinct gold")
+
     private val doing = mapOf(
         "RetroArch menu" to "opens RetroArch's menu", "Fast-forward (hold)" to "fast-forwards while held",
         "Fast-forward (switch)" to "switches fast-forward on and off", "Rewind (hold)" to "rewinds while held",
         "Save state" to "saves a state", "Load state" to "loads the state", "Screenshot" to "takes a picture",
-   )
+    )
 
     /**
      * [emulator] is the id the game opens in; [dolphinLayout] whether the launcher sets Dolphin's controls; [extras]
-     * what M1 and M2 do on this system when they have been taught, or null; [keeps] whether the place is kept on leaving.
+     * what M1 and M2 do on this system when they have been taught, or null; [keeps] whether Keep your place is on;
+     * [screens] the looks L1 and R1 change between, for a Game Boy game that has them.
      */
-    fun of(system: String, base: String, emulator: String, dolphinLayout: Boolean, extras: Pair<String, String>?, keeps: Boolean = true): String {
+    fun of(system: String, base: String, emulator: String, dolphinLayout: Boolean, extras: Pair<String, String>?, keeps: Boolean = true,
+           screens: List<String>? = null): String {
         val parts = ArrayList<String>()
         when {
             emulator.startsWith("ra:") -> {
-                cores[emulator]?.let(parts::add)
+                if ((system to base) !in ownButtons) cores[emulator]?.let(parts::add)
+                retroOwn[system]?.get(base)?.let(parts::add)
+                // A Game Boy game's looks (GbLooks), when it has them.
+                if (screens != null && screens.size > 1) parts += "L1 and R1 change the screen between " +
+                    screens.dropLast(1).joinToString(", ") + " and " + screens.last() + "."
                 if (extras != null) {
                     val m = listOfNotNull(doing[extras.first]?.let { "M1 $it" }, doing[extras.second]?.let { "M2 $it" })
                     if (m.isNotEmpty()) parts += m.joinToString(", ").replaceFirstChar { it.uppercase() } + "."
@@ -3460,6 +3852,8 @@ object ControlsNote {
             }
             emulator == "dolphin" -> {
                 if (dolphinLayout) parts += if (system == "wii") wiiOwn[base] ?: REMOTE else CUBE
+                else if (base == "warioware - smooth moves") wiiOwn[base]?.let(parts::add)
+                if (system != "wii") cubeOwn[base]?.let(parts::add)
                 // Home leaves with Dolphin's state taken in (settleDolphin); its own Exit Emulation saves nothing.
                 parts += if (keeps) "Home leaves and keeps your place. Back, then Exit Emulation, starts it fresh next time." else "To leave: Back, then Exit Emulation."
             }

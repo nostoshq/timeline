@@ -644,19 +644,30 @@ fun DetailScreen(screen: Screen.Detail) {
                             weight = FontWeight.Bold, tracking = 3, upper = true, lineHeight = 1.6f, maxLines = 2)
                     }
                 }
-                val controls = remember(g.key, emulatorId, tick) {
+                // A Game Boy game's screens for L1 and R1, only with the handhelds shown as their own screens: as last
+                // written, or before any setup in this run, worked out from the cartridge the same way (off the main thread).
+                val lcd = g.system == "gb" && emulatorId == "ra:gambatte" && app.retroManaged && app.look().handheld == RetroPack.TRUE_LCD
+                val gbScreens by produceState(if (lcd) Runner.gbLooks[g.stem] else null, g.key, emulatorId, tick, lcd) {
+                    value = if (!lcd) null else Runner.gbLooks[g.stem] ?: if (Runner.gbLooksKnown) null
+                        else withContext(Dispatchers.IO) {
+                            Runner.retroPackage(app.ctx)?.let { Runner.retroPaths(app.ctx, it) }
+                                ?.let { GbLooks.expected(File(g.path), File(RetroPack.SHARED, "system/palettes"), it.home, it.slang) }
+                        }
+                }
+                val controls = remember(g.key, emulatorId, tick, gbScreens) {
                     val taught = app.prefs.int("m1.code", 0) > 0 || app.prefs.int("m2.code", 0) > 0
                     ControlsNote.of(g.system, g.base, emulatorId, app.look().dolphinPad,
                         if (taught && app.retroManaged) app.look().extras[g.system] ?: Hotkeys.usual(g.system) else null,
                         // Dolphin's place is taken in through the maker's service (settleDolphin): without it, Home keeps nothing.
                         // and a GameCube game on more than one disc always starts fresh.
-                        app.prefs.bool("ra.resume", true) && (emulatorId != "dolphin" || (Bridge.present && g.discs.size <= 1)))
+                        app.prefs.bool("ra.resume", true) && (emulatorId != "dolphin" || (Bridge.present && g.discs.size <= 1 && !DolphinPack.startsFresh(g.base))),
+                        screens = gbScreens)
                 }
                 if (controls.isNotEmpty()) {
                     Gap(h = 14)
                     Row(horizontalArrangement = Arrangement.spacedBy(16.u())) {
                         Label("Controls", Modifier.padding(top = 3.u()), size = 12)
-                        T(controls, 15, Modifier.weight(1f), color = Ink.Muted, lineHeight = 1.35f, maxLines = 5)   // the DS's runs to five with M1 and M2 taught
+                        T(controls, 15, Modifier.weight(1f), color = Ink.Muted, lineHeight = 1.35f, maxLines = 6)   // Skyward Sword's runs to six
                     }
                 }
                 if (g.discs.size > 1 && !pickDisc) {
@@ -1534,6 +1545,7 @@ private fun aboutPage(app: AppState): MenuDef = MenuDef(settings("About Timeline
     Item("Space Grotesk", "SIL Open Font License", "The typeface, by Florian Karsten and the Space Grotesk Project Authors."),
     Item("CRT beam simulator", "MIT", "By Mark Rejhon of Blur Busters and Timothy Lottes. Dreamcast's steady version is adapted from it."),
     Item("GDV Mini Ultra", "GPL 2.0 or later", "By guest(r), with work by DariusG, from RetroArch's shader collection. Timeline's GLSL version is a modified port of it."),
+    Item("SameBoy", "MIT", "The Game Boy Color's start-up palettes for Game Boy games, from SameBoy's boot ROM, by Lior Halphon. The Color's screen follows Pokefan531's model of its colors."),
     Item("Display calibration", "MIT", "The Retroid Pocket Nova's measured color, by pippopapera. Offered on that device only."),
     Item("ES-DE", "MIT", "How each emulator is handed a game follows ES-DE's Android rules, by Northwestern Software AB and its authors."),
     Item("Kotlin, Compose, Coil, OkHttp", "Apache 2.0", "The language and the libraries Timeline is built with, with Okio and kotlinx.coroutines."),

@@ -131,6 +131,10 @@ Handheld screens were their own thing. **As the console**, the default in **Sett
 
 - **Game Boy**: the green dot-matrix screen, dark dots of ink over a reflector that shows between them, each dot's
   shadow, and the smear of a slow screen, which turned some games' flicker into the see-through it was meant as.
+  L1 and R1 change the screen while a game plays: the Game Boy's, the Pocket's black and white one, or the game as a
+  Game Boy Color showed it, in the colors the Color's start-up gave that cartridge (SameBoy's tables), on the Color's
+  own screen (Pokefan531's model of its colors). A cartridge made with colors of its own for the Color has the first two.
+  Each game starts in the screen it was left in.
 - **Game Boy Color**: its own washed-out colors and pixel shape, with the unlit screen showing through pale pixels.
 - **Game Boy Advance**: the original's dark, unlit screen, with its deeper colors, under an LCD grid.
 - **Game Gear**: its backlit screen's slow fade, at its own shape: a 4:3 window of pixels a fifth wider than tall.

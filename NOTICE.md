@@ -11,6 +11,7 @@ It includes work by others, used under their licenses. The full license texts ar
 | Space Grotesk (Regular, Medium, Bold), cut to fixed weights from the variable font | Florian Karsten and the Space Grotesk Project Authors | SIL Open Font License 1.1 ([text](LICENSES/OFL-1.1-SpaceGrotesk.txt)) | `app/src/main/res/font`: every word on screen |
 | CRT beam simulator, adapted as Dreamcast's steady beam | Mark Rejhon (Blur Busters) and Timothy Lottes | MIT ([text](LICENSES/MIT-crt-beam-simulator.txt)) | `SteadyBeam` in `Shaders.kt` |
 | GDV Mini Ultra (`CRT - Guest - Nomask w. Curvature`), ported to GLSL and modified | guest(r), with work by DariusG | GPL-2.0-or-later ([text](LICENSES/GPL-2.0.txt)) | `Crt3d` in `Shaders.kt` |
+| Game Boy Color boot palettes (the palette tables and how the Color chose one for a Game Boy cartridge), from SameBoy's boot ROM | Lior Halphon | MIT, as the Expat License ([text](LICENSES/MIT-SameBoy.txt)) | `GbLooks.kt`: a Game Boy game's Game Boy Color screen |
 | Retroid Pocket Nova display calibration (`gamma22.npatch`) | pippopapera | MIT ([text](LICENSES/MIT-nova-display-calibration.txt)) | `app/src/main/assets/display`, offered on that device only |
 | Emulator launch details (package and activity names, how each emulator is handed a game), following ES-DE's Android rules | Northwestern Software AB, Leon Styhre, Alec Lofquist | MIT ([text](LICENSES/MIT-ES-DE.txt)) | `Emulators` in `Core.kt` |
 | Kotlin standard library, Jetpack Compose and AndroidX | The Kotlin and Android Open Source Project authors | Apache-2.0 ([text](LICENSES/Apache-2.0.txt)) | the app's code |
@@ -18,6 +19,9 @@ It includes work by others, used under their licenses. The full license texts ar
 | OkHttp and Okio | Square, Inc. | Apache-2.0 ([text](LICENSES/Apache-2.0.txt)) | inside Coil |
 | kotlinx.coroutines | JetBrains s.r.o. and contributors | Apache-2.0 ([text](LICENSES/Apache-2.0.txt)) | the app's code |
 | Public Suffix List | Mozilla Foundation and contributors | MPL-2.0 ([text](LICENSES/MPL-2.0.txt)); source at [publicsuffix.org](https://publicsuffix.org) | inside OkHttp, unchanged |
+
+The Game Boy Color screen follows Pokefan531's model of that console's colors, the one Gambatte's accurate color
+correction uses; Timeline works the same numbers itself.
 
 ## Not included
 

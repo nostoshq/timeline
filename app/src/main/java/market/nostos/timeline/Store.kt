@@ -680,8 +680,13 @@ object Runner {
         return modern || ctx.packageManager.checkPermission("android.permission.READ_EXTERNAL_STORAGE", pkg) == PackageManager.PERMISSION_GRANTED
     }
 
+    /** By stem, the looks each Game Boy game has (GbLooks), as last written: for its controls note. */
+    @Volatile var gbLooks: Map<String, List<String>> = emptyMap()
+    /** Whether [gbLooks] has been worked out in this run for the screen chosen (otherwise a game page works its own out, GbLooks.expected). */
+    @Volatile var gbLooksKnown = false
+
     fun writeRetroSetup(look: Look, p: RetroPack.Paths, pal: List<Pair<String, String>>, arcade: List<String> = emptyList(),
-                        handheld: List<Pair<String, String>> = emptyList()): Boolean = runCatching {
+                        handheld: List<Pair<String, String>> = emptyList(), gb: List<GbLooks.Rom> = emptyList()): Boolean = runCatching {
         val home = File(p.home)
         val config = File(home, "config")
         config.mkdirs()
@@ -705,7 +710,16 @@ object Runner {
         val gdv = File(p.slang, "crt/shaders/crt-gdv-mini-ultra.slang")
         val made = if (gdv.isFile) runCatching { Crt3d.slang(gdv.readText()) }.getOrNull() else null
         if (made != null) put(File(dir, Crt3d.SLANG), made)
-        val files = RetroPack.files(look.copy(crt3dSlang = made != null), p, pal, arcade, handheld)
+        // The Game Boy's three looks, for the games handed over (retroSetup): with the handhelds shown as their own screens,
+        // every Game Boy game; otherwise only one RetroArch still has open, until it closes. What is no longer wanted goes
+        // only after everything else is written (GbLooks.Written).
+        val gbWritten = GbLooks.write(p.home, p.slang, File(RetroPack.SHARED, "system/palettes"), gb, ::put)
+        val gbSetup = gbWritten.setup
+        // Known for the game pages only when written with the handhelds as their own screens: after another screen, or
+        // a change of setting since, a page works out its own (GbLooks.expected).
+        gbLooks = if (look.handheld == RetroPack.TRUE_LCD) gbSetup?.looks.orEmpty() else emptyMap()
+        gbLooksKnown = look.handheld == RetroPack.TRUE_LCD
+        val files = RetroPack.files(look.copy(crt3dSlang = made != null), p, pal, arcade, handheld, gbSetup)
         val listed = File(home, "written.txt")
         val before = if (listed.isFile) listed.readLines().toSet() else emptySet()
         // Only ever a file inside the launcher's own settings folder, whatever the list has come to hold.
@@ -728,6 +742,7 @@ object Runner {
         }
         // Remembered so they can be removed later: presets, and files named after a game or a folder rather than a core.
         put(listed, files.keys.filter { it.endsWith(".slangp") || it.endsWith(".glslp") || it.substringAfter('/').substringBeforeLast('.') != it.substringBefore('/') }.joinToString("\n"))
+        gbWritten.finish()
         true
     }.getOrDefault(false)
 
@@ -1323,6 +1338,38 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     /** What a DS save sync did: something to tell the player, and whether RetroArch's save was replaced. */
     private class DsSync(val message: String? = null, val intoRetro: Boolean = false)
 
+    /**
+     * Before a PlayStation game starts in RetroArch: a disc that shares its card with another (Gran Turismo 2's two) gets
+     * the newer card, and Suikoden II gets Suikoden's card in its second slot. Only ever forward in time, never over a
+     * card holding a save the other lacks, and never while either game is open; what a copy replaces is still on the
+     * card's backup. A place kept from before the newer card arrived is set aside, so the game reads the card afresh.
+     */
+    private fun psxCards(g: Game, emulatorId: String) {
+        val core = Saves.coreFolder(emulatorId) ?: return
+        val dir = File("${Runner.RETRO}/saves/$core")
+        val stem = saveStem(g, emulatorId)
+        fun copyIfNewer(from: File, to: File): Boolean {
+            if (!from.isFile || from.length() != PsxCard.SIZE.toLong()) return false
+            if (to.isFile && to.lastModified() + 2000 >= from.lastModified()) return false
+            val bytes = from.readBytes()
+            if (to.isFile) { val old = to.readBytes(); if (old.contentEquals(bytes) || !PsxCard.covers(bytes, old)) return false }
+            val part = File(to.path + ".part")
+            part.writeBytes(bytes)
+            if (!part.renameTo(to)) { part.delete(); return false }
+            to.setLastModified(from.lastModified())
+            return true
+        }
+        val group = RetroPack.psxSharedCards.firstOrNull { stem in it }
+        val open = cardLibrary["psx"].orEmpty().filter { isOpen(it.key) }.map { it.stem }.toSet()
+        if (group != null && group.none { it in open }) {
+            val mine = File(dir, "$stem.srm")
+            val newest = group.map { File(dir, "$it.srm") }.filter { it.isFile }.maxByOrNull { it.lastModified() }
+            if (newest != null && newest != mine && copyIfNewer(newest, mine)) placeOf(g, emulatorId)?.takeIf { it.isFile && it.lastModified() < mine.lastModified() }?.let(::setAside)
+        }
+        // SwanStation names a game's second card after its file ("Separate Card Per Game (Game Title)").
+        if (core == "SwanStation") RetroPack.psxSecondCard[stem]?.takeIf { it !in open }?.let { first -> copyIfNewer(File(dir, "$first.srm"), File(dir, "${stem}_2.mcd")) }
+    }
+
     private fun syncDsSave(g: Game, toMelon: Boolean): DsSync {
         val none = DsSync()
         if (isOpen(g.key)) return none
@@ -1879,6 +1926,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                         })
                         val n = if (got) Runner.unpackShaders(zip, p) else 0
                         zip.delete()
+                        if (n > 0) retroSetup(p)        // written again with the collection in place: the Game Boy's screens are made from it
                         n
                     }
                     shaderJob = false
@@ -1913,8 +1961,14 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             prefs.put("ra.cheevosPass", ""); prefs.put("ra.cheevosSigned", user)
         }
         val look = look()
-        val handheld = listOf("gb", "gbc").flatMap { s -> cardLibrary[s].orEmpty().map { s to it.stem } }
-        val ok = Runner.writeRetroSetup(look, p, palGames(), cardLibrary["arcade"]?.map { it.stem } ?: emptyList(), handheld)
+        val handheld = listOf("gb", "gbc", "gba", "nds").flatMap { s -> cardLibrary[s].orEmpty().map { s to it.stem } }
+        // A Game Boy game RetroArch still has open keeps its looks while another screen is being chosen: taken away now,
+        // RetroArch would write the game's options back when it closes (for good, as they are no longer the launcher's
+        // to remove), and could read its preset again while it runs. They go at the next setup after it closes.
+        // (stillOpen, not "ra.last": that is what RetroArch was handed last, and it stays after RetroArch has closed.)
+        val gb = cardLibrary["gb"].orEmpty().filter { look.handheld == RetroPack.TRUE_LCD || (stillOpen.isNotEmpty() && it.key == stillOpen) }
+            .map { GbLooks.Rom(it.stem, File(it.path), prefs.str("gb.look/${it.stem}")) }
+        val ok = Runner.writeRetroSetup(look, p, palGames(), cardLibrary["arcade"]?.map { it.stem } ?: emptyList(), handheld, gb)
         if (ok && look.achievements?.fresh == true) prefs.put("ra.cheevosFresh", false)    // handed over; RetroArch signs in with it next
         return ok
     }
@@ -3046,6 +3100,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             }
             // With the launcher's own setup switched on, RetroArch is pointed at it. If it cannot be written, RetroArch starts as usual.
             if (retro) withContext(Dispatchers.IO) { Runner.copyBios(romsRoot) }     // BIOS files are put where RetroArch looks, every time, cheaply
+            if (retro && retroManaged) gbRemembering?.join()
             val ready = if (retro && retroManaged) withContext(Dispatchers.IO) {
                 Runner.retroPaths(ctx, plan.pkg)?.takeIf { retroSetup(it) }
             } else null
@@ -3061,6 +3116,10 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                 ds?.message?.let { say(it) }
                 intoRetro = ds?.intoRetro == true
             }
+            // PlayStation discs that read each other's cards (Gran Turismo 2, Suikoden II): not on a return to the open game.
+            // When RetroArch held the other disc, the first start finds it open and leaves the cards; the automatic second
+            // start, after RetroArch has closed (and written that disc's card), brings them together.
+            if (retro && g.system == "psx" && !back) withContext(Dispatchers.IO) { runCatching { psxCards(g, emulatorId) } }
             if (retro && (!second || intoRetro)) {
                 // A place the player took back by hand is loaded once, whatever its age.
                 if (prefs.bool("place.keep:" + g.key, false)) prefs.put("place.keep:" + g.key, false)
@@ -3451,10 +3510,14 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     private fun prepareDolphin(g: Game) {
         val pending = prefs.str("dolphin.pending")
         var keepTemp = false
-        if (pending.isNotEmpty()) when (DolphinResume.collect(ctx, pending)) {
+        // A game whose places are never kept (more than one disc, or one a loaded place breaks) has nothing to take in:
+        // what Dolphin left of it is cleared, as when it ends with the launcher open (settleDolphin).
+        if (pending.isNotEmpty() && find(pending)?.let { it.discs.size > 1 || DolphinPack.startsFresh(it.base) } == true) {
+            DolphinResume.clear(ctx); prefs.put("dolphin.pending", "")
+        } else if (pending.isNotEmpty()) when (DolphinResume.collect(ctx, pending)) {
             "ok", "none", "link" -> prefs.put("dolphin.pending", "")
             else -> {
-                keepTemp = pending == g.key && find(pending)?.discs.orEmpty().size <= 1   // could not be moved: left where Dolphin loads it
+                keepTemp = pending == g.key && g.discs.size <= 1 && !DolphinPack.startsFresh(g.base)   // could not be moved: left where Dolphin loads it
                 // Another game's place that could not be taken in (no room, say) is renamed beside it, not cleared away
                 // under this game; the next start of that game finds it gone and starts fresh, the place still on the device.
                 if (!keepTemp && pending != g.key && DolphinResume.keepAside(ctx, pending)) {
@@ -3465,7 +3528,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         }
         val fresh = prefs.str("dolphin.fresh") == g.key
         if (fresh) prefs.put("dolphin.fresh", "")
-        val placed = !keepTemp && look().resume && !testStartOf(g.key) && !fresh && g.discs.size <= 1 &&
+        val placed = !keepTemp && look().resume && !testStartOf(g.key) && !fresh && g.discs.size <= 1 && !DolphinPack.startsFresh(g.base) &&
             DolphinResume.file(ctx, g.key).isFile && DolphinResume.place(ctx, g.key)
         if (!placed && !keepTemp) { DolphinResume.clear(ctx); prefs.put("dolphin.pending", "") }
         prefs.put("dolphin.placed", if (placed || keepTemp) g.key else "")
@@ -3487,7 +3550,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             withContext(Dispatchers.Main) { setHeld(heldOpen + (DolphinPack.PACKAGE to Held(key, content))) }
             return
         }
-        if (find(key)?.discs.orEmpty().size > 1) { DolphinResume.clear(ctx); prefs.put("dolphin.pending", ""); return }
+        if (find(key)?.let { it.discs.size > 1 || DolphinPack.startsFresh(it.base) } == true) { DolphinResume.clear(ctx); prefs.put("dolphin.pending", ""); return }
         when (DolphinResume.collect(ctx, key)) {
             "ok", "link" -> prefs.put("dolphin.pending", "")
             "none" -> {
@@ -3565,6 +3628,32 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         RetroLog.closed(log.readText())
     }.getOrNull()
 
+    /**
+     * The look each Game Boy game was left in (GbLooks), once RetroArch has closed: it starts in that look next time.
+     * Not while RetroArch still holds the game (left with Home): its folder of looks is not to change under it.
+     */
+    private fun rememberGbLooks() {
+        if (!retroManaged) return
+        gbRemembering?.cancel()
+        gbRemembering = scope.launch(Dispatchers.IO) {
+            // RetroArch writes its last lines as it closes, which can be a moment after the launcher is back in front.
+            for (wait in listOf(0L, 1500L)) { delay(wait); if (readGbLooks()) break }
+        }
+    }
+    /** That reading, which a start waits for (so a game starts in the look it was just left in). */
+    private var gbRemembering: Job? = null
+
+    /** False when RetroArch had a Game Boy game's looks open and its log does not say it has closed yet. */
+    private fun readGbLooks(): Boolean = runCatching {
+        val log = Runner.retroPackage(ctx)?.let { Runner.retroPaths(ctx, it) }?.log?.let(::File) ?: return@runCatching true
+        if (!log.isFile || log.length() >= 4_000_000) return@runCatching true
+        val text = log.readText()
+        if ("/${Crt3d.DIR}/${GbLooks.DIR}/" !in text) return@runCatching true
+        if (!RetroLog.closed(text)) return@runCatching false
+        for ((stem, look) in GbLooks.leftIn(text)) prefs.put("gb.look/$stem", look)
+        true
+    }.getOrDefault(true)
+
     /** Called when the launcher comes back to the front: adds the time spent in the game just left. */
     /** A game has just been handed to its emulator: a Home press from here on returns to where it was started from. */
     var awayForGame = false
@@ -3579,6 +3668,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         if (stuck.isNotEmpty() && (Runner.stopped(ctx, stuckPackage()) || prefs.int("ra.stuckBoot", -1) != boots())) { prefs.put("ra.maybe", ""); unstick(announce = true) }
         val viaHome = homePressed
         homePressed = false
+        if (!viaHome) rememberGbLooks()
         inFront = true
         cameByHome = viaHome
         forgetStopped()

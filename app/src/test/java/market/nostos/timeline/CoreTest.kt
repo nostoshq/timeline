@@ -668,8 +668,9 @@ class UprightAndSoundTest {
     private val p = RetroPack.Paths("/storage/emulated/0/Timeline/retroarch", "com.retroarch.aarch64", "/data/user/0/com.retroarch.aarch64", "/data/app/x/base.apk")
 
     @Test fun uprightArcadeGamesTurnThePictureAndEveryControl() {
-        val files = RetroPack.files(Look(), p, arcade = listOf("galaga", "ptiger2f", "1943"))
-        assertEquals("fbneo-vertical-mode = \"TATE alternate\"\n", files["FinalBurn Neo/FinalBurn Neo.opt"])
+        val files = RetroPack.files(Look(), p, arcade = listOf("galaga", "ptiger2f", "1943", "sf2hf"))
+        assertTrue(files.getValue("FinalBurn Neo/FinalBurn Neo.opt").startsWith("fbneo-vertical-mode = \"TATE alternate\"\n"))
+        assertTrue(files.getValue("FinalBurn Neo/FinalBurn Neo.opt").contains("fbneo-dipswitch-strider-Cabinet = \"Upright 2P\"\n"))
         val turned = files.getValue("remaps/FinalBurn Neo/galaga.rmp")
         // right side down: pushing toward the device's left edge is "up" for the player
         for (line in listOf("input_player1_btn_left = \"4\"", "input_player1_btn_right = \"5\"", "input_player1_btn_up = \"7\"", "input_player1_btn_down = \"6\"",
@@ -678,14 +679,16 @@ class UprightAndSoundTest {
             assertTrue(line, turned.contains(line + "\n"))
         assertTrue("remaps/FinalBurn Neo/1943.rmp" in files)
         assertEquals(null, files["remaps/FinalBurn Neo/ptiger2f.rmp"])       // a level game is left exactly as it is
+        // a six-button fighter has only its Modern layout
+        assertEquals("input_libretro_device_p1 = \"517\"\ninput_libretro_device_p2 = \"517\"\n", files["remaps/FinalBurn Neo/sf2hf.rmp"])
 
         val other = RetroPack.files(Look(upright = "Left side down"), p, arcade = listOf("galaga"))
-        assertEquals("fbneo-vertical-mode = \"TATE\"\n", other["FinalBurn Neo/FinalBurn Neo.opt"])
+        assertTrue(other.getValue("FinalBurn Neo/FinalBurn Neo.opt").startsWith("fbneo-vertical-mode = \"TATE\"\n"))
         assertTrue(other.getValue("remaps/FinalBurn Neo/galaga.rmp").contains("input_player1_btn_right = \"4\"\n"))
         assertTrue(other.getValue("remaps/FinalBurn Neo/galaga.rmp").contains("input_player1_btn_y = \"0\"\n"))
 
         val level = RetroPack.files(Look(upright = "Keep it level"), p, arcade = listOf("galaga"))
-        assertEquals("fbneo-vertical-mode = \"disabled\"\n", level["FinalBurn Neo/FinalBurn Neo.opt"])
+        assertTrue(level.getValue("FinalBurn Neo/FinalBurn Neo.opt").startsWith("fbneo-vertical-mode = \"disabled\"\n"))
         assertEquals(null, level["remaps/FinalBurn Neo/galaga.rmp"])
         assertEquals("/storage/emulated/0/Timeline/retroarch/config/remaps", RetroPack.base(Look(), p)["input_remapping_directory"])
     }
@@ -1678,18 +1681,22 @@ class ExtrasTest {
     @Test fun eachSystemGetsTheControlsAndFixesItsGamesNeed() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val ladx = "Legend of Zelda, The - Link's Awakening DX (USA, Europe) (Rev 2) (SGB Enhanced) (GB Compatible)"
-        val files = RetroPack.files(Look(), p, handheld = listOf("gbc" to ladx, "gbc" to "Lantern Keep (USA)"))
+        val files = RetroPack.files(Look(), p, handheld = listOf("gbc" to ladx, "gbc" to "Lantern Keep (USA)", "gbc" to "Pokemon - Crystal Version (USA, Europe) (Rev 1)"))
         // PlayStation: a DualShock in every port, each core by its own number, digital at power-on with the stick on the d-pad
         assertEquals((1..4).joinToString("") { "input_libretro_device_p$it = \"261\"\n" }, files.getValue("remaps/SwanStation/SwanStation.rmp"))
         assertTrue(files.getValue("remaps/Beetle PSX HW/Beetle PSX HW.rmp").contains("input_libretro_device_p1 = \"517\""))
         assertTrue(files.getValue("SwanStation/SwanStation.opt").contains("swanstation_Controller1_AnalogDPadInDigitalMode = \"true\""))
         assertTrue(files.getValue("Beetle PSX HW/Beetle PSX HW.opt").contains("beetle_psx_hw_analog_toggle = \"enabled\""))
-        // Link's Awakening: START and SELECT twice, so its save screen (A, B, START and SELECT) opens; no other game
+        // Link's Awakening: START and SELECT twice, so its save screen (A, B, START and SELECT) opens; the Pokémon games
+        // too, which reset with A, B, START and SELECT; no other game
         assertEquals("quit_press_twice = \"true\"\n", files.getValue("Gambatte/$ladx.cfg"))
         assertEquals("quit_press_twice = \"true\"\n", files.getValue("mGBA/$ladx.cfg"))
         assertNull(files["Gambatte/Lantern Keep (USA).cfg"])
+        assertEquals("quit_press_twice = \"true\"\n", files["Gambatte/Pokemon - Crystal Version (USA, Europe) (Rev 1).cfg"])
         assertTrue(ControlsNote.of("gbc", Titles.base("$ladx.gbc"), "ra:gambatte", true, null).contains("START and SELECT pressed twice leave and keep your place."))
         assertTrue(ControlsNote.of("gbc", "lantern keep", "ra:gambatte", true, null).contains("START and SELECT together leave"))
+        assertTrue(ControlsNote.of("gbc", "pokemon - crystal version", "ra:gambatte", true, null).contains("START and SELECT pressed twice leave"))
+        assertTrue(ControlsNote.of("gbc", "pokemon pinball", "ra:gambatte", true, null).contains("START and SELECT together leave"))
         // the original Game Boy's screen runs a Game Boy game as a Game Boy, even one that colors itself on a Color
         val lcd = RetroPack.files(Look(handheld = RetroPack.TRUE_LCD), p)
         assertTrue(lcd.getValue("Gambatte/gb.opt").contains("gambatte_gb_hwmode = \"GB\""))
@@ -2336,5 +2343,142 @@ class ExtrasTest {
         assertTrue(pal.getValue("SwanStation/Some Game (Europe).cfg").contains("video_shader_subframes = \"1\""))
         // the television consoles' own setting is left alone
         assertTrue(RetroPack.files(Look(motion3d = "Off"), p).getValue("Snes9x/Snes9x.cfg").contains("video_shader_subframes = \"2\""))
+    }
+
+    @Test fun wiiGamesHeldTheirOwnWayGetTheirOwnProfile() {
+        val nova = "Android/1/Retroid Pocket Controller"
+        val docs = DolphinPack.docs(Look(), nova).groupBy { it.path }
+        for (hold in DolphinPack.Hold.values()) assertTrue(hold.profile, docs.containsKey("Config/Profiles/Wiimote/${hold.profile}.ini"))
+        fun profile(hold: DolphinPack.Hold) = docs.getValue("Config/Profiles/Wiimote/${hold.profile}.ini").single().text!!
+        val classic = profile(DolphinPack.Hold.CLASSIC)
+        assertEquals("Classic", Ini.value(classic, "Profile", "Extension"))
+        assertEquals("`Button L1`", Ini.value(classic, "Profile", "Classic/Triggers/L"))
+        assertEquals("`Button R2` | `Axis 22+` | `Axis 18+`", Ini.value(classic, "Profile", "Classic/Buttons/ZR"))
+        assertNull(Ini.value(classic, "Profile", "Nunchuk/Stick/Up"))
+        val point = profile(DolphinPack.Hold.POINT)
+        assertEquals("False", Ini.value(point, "Profile", "IR/Relative Input"))
+        assertEquals("`Button R2` & `Axis 14-`", Ini.value(point, "Profile", "Swing/Forward"))
+        assertEquals("`Button R2`", Ini.value(profile(DolphinPack.Hold.UPRIGHT), "Profile", "Hotkeys/Upright Hold"))
+        assertEquals("`Button R2` & `Axis 0-`", Ini.value(profile(DolphinPack.Hold.UPRIGHT), "Profile", "Tilt/Left"))
+        assertEquals("`Axis 11+`", Ini.value(profile(DolphinPack.Hold.TILT), "Profile", "Tilt/Right"))
+        assertEquals("`Axis 14-`", Ini.value(profile(DolphinPack.Hold.SWORD), "Profile", "Swing/Up"))
+        assertEquals("True", Ini.value(profile(DolphinPack.Hold.SIDEWAYS), "Profile", "Options/Sideways Wiimote"))
+        assertEquals("`Button B`", Ini.value(profile(DolphinPack.Hold.SIDEWAYS), "Profile", "Buttons/1"))
+        // each game names its profile, and the profiles come before every game file
+        fun named(id: String) = docs.getValue("GameSettings/$id.ini").firstNotNullOf { it.set["Controls"]?.get("WiimoteProfile1") }
+        assertEquals("Timeline classic", named("SX4E01")); assertEquals("Timeline pointing", named("RM3E01"))
+        assertEquals("Timeline upright", named("RMGE01")); assertEquals("Timeline upright", named("SB4E01"))
+        assertEquals("Timeline tilt", named("SMNE01")); assertEquals("Timeline sword", named("SOUE01")); assertEquals("Timeline sideways", named("R7PE01"))
+        val order = DolphinPack.docs(Look(), nova).map { it.path }
+        assertTrue(order.indexOfLast { it.startsWith("Config/Profiles") } < order.indexOfFirst { it.startsWith("GameSettings") })
+        // with the controls left to Dolphin, the lines come back out
+        val own = DolphinPack.docs(Look(dolphinPad = false), nova)
+        assertEquals(setOf("WiimoteProfile1"), own.first { it.path == "GameSettings/RM3E01.ini" && it.remove.isNotEmpty() }.remove["Controls"])
+        // two controls held together come from the same controller, either controller counting
+        val two = DolphinPack.wiiRemote(listOf("A/1", "B/2"), DolphinPack.Hold.POINT)
+        assertEquals("(`A/1:Button R2` & `A/1:Axis 14-`) | (`B/2:Button R2` & `B/2:Axis 14-`)", Ini.value(two, "Profile", "Swing/Forward"))
+        assertEquals("False", Ini.value(two, "Profile", "IR/Relative Input"))
+        assertEquals("`A/1:Button L2` | `B/2:Button L2` | `A/1:Axis 23+` | `B/2:Axis 23+` | `A/1:Axis 17+` | `B/2:Axis 17+`",
+            Ini.value(DolphinPack.wiiRemote(listOf("A/1", "B/2"), DolphinPack.Hold.CLASSIC), "Profile", "Classic/Buttons/ZL"))
+    }
+
+    @Test fun dolphinGameFixesAndNotes() {
+        val docs = DolphinPack.docs(Look(), "Android/1/Retroid Pocket Controller")
+        fun fix(id: String, section: String, key: String) = docs.filter { it.path == "GameSettings/$id.ini" }.firstNotNullOfOrNull { it.set[section]?.get(key) }
+        assertEquals("False", fix("GLME01", "Core", "CPUThread"))
+        assertEquals("False", fix("GV4E69", "Video_Hacks", "FastTextureSampling"))
+        assertEquals("False", fix("GT3E52", "Video_Hacks", "XFBToTextureEnable"))
+        assertEquals("0", fix("G4BE08", "Video_Settings", "SafeTextureCacheColorSamples"))
+        assertEquals("False", fix("G4BE08", "Video_Settings", "FastDepthCalc"))
+        // Xenoblade keeps its fix as well as its controller
+        assertEquals("False", fix("SX4E01", "Video_Hacks", "EFBToTextureEnable"))
+        assertTrue(DolphinPack.startsFresh("luigi's mansion")); assertFalse(DolphinPack.startsFresh("super mario sunshine"))
+        val luigi = ControlsNote.of("gc", "luigi's mansion", "dolphin", true, null, keeps = false)
+        assertTrue(luigi.contains("starts from its title every time") && luigi.endsWith("To leave: Back, then Exit Emulation."))
+        assertTrue(ControlsNote.of("wii", "xenoblade chronicles", "dolphin", true, null).startsWith("Played on the Classic Controller"))
+        assertTrue(ControlsNote.of("wii", "super mario galaxy", "dolphin", true, null).contains("Hold R2 to stand the remote up"))
+        assertTrue(ControlsNote.of("gc", "animal crossing", "dolphin", false, null).contains("Game Boy Advance link"))
+        assertTrue(ControlsNote.of("wii", "warioware - smooth moves", "dolphin", false, null).startsWith("Its microgames"))
+        assertFalse(ControlsNote.of("wii", "metroid prime", "dolphin", true, null).contains("Fusion"))
+    }
+
+    @Test fun nintendo64GamesGetTheirRumbleFixesAndButtons() {
+        val p = RetroPack.Paths("/storage/emulated/0/Timeline/retroarch", "com.retroarch.aarch64", "/data/user/0/com.retroarch.aarch64", "/data/app/x/base.apk")
+        val out = RetroPack.files(Look(), p)
+        val star = out.getValue("Mupen64Plus-Next/Star Fox 64 (USA) (Rev 1).opt")
+        for (port in 1..4) assertTrue(star.contains("mupen64plus-pak$port = \"rumble\""))
+        assertTrue(star.contains("mupen64plus-43screensize = \"1280x960\""))      // every usual setting comes with it
+        // a game that saves to the Controller Pak keeps it
+        assertFalse(out.containsKey("Mupen64Plus-Next/Turok 2 - Seeds of Evil (USA) (Rev 1).opt"))
+        val majora = out.getValue("Mupen64Plus-Next/Legend of Zelda, The - Majora's Mask (USA).opt")
+        assertTrue(majora.contains("mupen64plus-EnableCopyAuxToRDRAM = \"True\"") && majora.contains("mupen64plus-pak1 = \"rumble\""))
+        assertTrue(out.getValue("Mupen64Plus-Next/Banjo-Kazooie (USA) (Rev 1).opt").contains("mupen64plus-EnableCopyColorToRDRAM = \"Sync\""))
+        val blast = out.getValue("Mupen64Plus-Next/Blast Corps (USA) (Rev 1).opt")
+        assertTrue(blast.contains("mupen64plus-EnableLegacyBlending = \"False\"") && !blast.contains("pak1"))
+        // run lighter, a game keeps its own settings
+        val light = RetroPack.files(Look(lighter = mapOf("n64/Star Fox 64 (USA) (Rev 1)" to true)), p).getValue("Mupen64Plus-Next/Star Fox 64 (USA) (Rev 1).opt")
+        assertTrue(light.contains("mupen64plus-43screensize = \"320x240\"") && light.contains("mupen64plus-pak1 = \"rumble\""))
+        // Killer Instinct Gold: the other layout, and six attacks on six buttons for every player
+        val ki = RetroPack.KI_GOLD
+        assertTrue(out.getValue("Mupen64Plus-Next/$ki.opt").contains("mupen64plus-alt-map = \"True\""))
+        val rmp = out.getValue("remaps/Mupen64Plus-Next/$ki.rmp")
+        for (player in 1..4) for ((button, id) in listOf("y" to 1, "x" to 10, "r" to 9, "b" to 0, "a" to 8, "r2" to 11))
+            assertTrue("$player $button", rmp.lines().contains("input_player${player}_btn_$button = \"$id\""))
+        assertEquals(24, rmp.lines().count { it.isNotBlank() })
+        val note = ControlsNote.of("n64", "killer instinct gold", "ra:mupen64plus_next_gles3", true, null)
+        assertTrue(note.startsWith("Punches are Y, X and R1") && note.contains("On an Xbox controller, punches are X, Y and RB") && !note.contains("C buttons"))
+        assertTrue(ControlsNote.of("n64", "pokemon snap", "ra:mupen64plus_next_gles3", true, null).contains("Professor Oak"))
+        // No rumble only where the Controller Pak takes the slot: never for a game that had no rumble at all
+        assertTrue(ControlsNote.of("n64", "turok 2 - seeds of evil", "ra:mupen64plus_next_gles3", true, null).contains("No rumble"))
+        assertTrue(ControlsNote.of("n64", "diddy kong racing", "ra:mupen64plus_next_gles3", true, null).contains("time trial ghosts"))
+        for (base in listOf("doom 64", "turok - dinosaur hunter"))
+            assertFalse(base, ControlsNote.of("n64", base, "ra:mupen64plus_next_gles3", true, null).contains("rumble"))
+        assertTrue(ControlsNote.of("nds", "mario & luigi - bowser's inside story", "ra:melondsds", true, null).contains("giant battles, hold L2"))
+        assertTrue(ControlsNote.of("gbc", "mario tennis", "ra:gambatte", true, null).contains("Transfer Pak"))
+        assertFalse(ControlsNote.of("n64", "mario tennis", "ra:mupen64plus_next_gles3", true, null).contains("Transfer Pak"))
+        assertTrue(ControlsNote.of("nes", "startropics", "ra:nestopia", true, null).contains("747"))
+        assertTrue(ControlsNote.of("arcade", "robotron", "ra:fbneo", true, null).startsWith("SELECT puts in a coin and START starts. Move with the left stick"))
+        // no note says it louder than it is
+        for (s in listOf("n64", "nes", "psx", "arcade", "saturn", "dreamcast", "gbc", "gba", "nds"))
+            assertFalse(ControlsNote.of(s, "x", "ra:x", true, null).contains("!"))
+    }
+
+    @Test fun gamesWithNeedsOfTheirOwnGetTheirFiles() {
+        val p = RetroPack.Paths("/storage/emulated/0/Timeline/retroarch", "com.retroarch.aarch64", "/data/user/0/com.retroarch.aarch64", "/data/app/x/base.apk")
+        val out = RetroPack.files(Look(), p)
+        // Dreamcast fixes carry every usual setting with them
+        val taxi = out.getValue("Flycast/Crazy Taxi (USA).opt")
+        assertTrue(taxi.contains("reicast_native_depth_interpolation = \"enabled\"") && taxi.contains("reicast_internal_resolution"))
+        // Saturn's 3D Control Pad games, NES's three-in-one (a Zapper on the handheld, a pad docked), TurboGrafx's L2
+        assertEquals(RetroPack.padsOf(261), out.getValue("remaps/Beetle Saturn/Burning Rangers (USA).rmp"))
+        val three = "Super Mario Bros. + Duck Hunt + World Class Track Meet (USA)"
+        assertEquals("input_libretro_device_p2 = \"262\"\n", out.getValue("remaps/Nestopia/$three.rmp"))
+        assertTrue(out.getValue("Nestopia/$three.opt").contains("nestopia_overscan_v_top = \"0\""))
+        val docked = RetroPack.files(Look(tv = true), p)
+        assertEquals("input_libretro_device_p2 = \"257\"\n", docked.getValue("remaps/Nestopia/$three.rmp"))
+        assertNull(docked["Nestopia/$three.opt"])
+        assertTrue(out.getValue("remaps/Beetle PCE/tg16.rmp").contains("input_player1_btn_l2 = \"-1\""))
+        // handhelds: the Advance-aware Color games, WarioWare's sensors, the DS microphone and pointer
+        assertTrue(out.getValue("Gambatte/Shantae (USA).opt").contains("gambatte_gb_hwmode = \"GBA\""))
+        assertEquals("input_sensors_enable = \"true\"\n", out.getValue("mGBA/WarioWare - Twisted! (USA).cfg"))
+        val ds = out.getValue("melonDS DS/melonDS DS.opt")
+        assertTrue(ds.contains("melonds_mic_input = \"blow\"") && ds.contains("melonds_show_cursor = \"timeout\""))
+        assertTrue(out.getValue("melonDS DS/Contra 4 (USA).opt").contains("melonds_screen_layout1 = \"top-bottom\""))
+        // PlayStation: analog at power-on for the games made for it, the console's own disc speed for all
+        assertTrue(out.getValue("SwanStation/Silent Hill (USA).opt").contains("swanstation_Controller1_ForceAnalog = \"true\""))
+        assertTrue(out.getValue("Beetle PSX HW/Silent Hill (USA).opt").contains("beetle_psx_hw_analog_toggle = \"enabled-analog\""))
+        assertTrue(out.getValue("SwanStation/SwanStation.opt").contains("swanstation_CDROM_ReadSpeedup = \"1\""))
+        assertTrue(out.getValue("SwanStation/Metal Gear Solid (USA) (Rev 1).opt").contains("swanstation_GPU_PGXPCulling = \"false\""))
+        // a memory card is only ever replaced by one holding every save it had
+        fun card(vararg names: String) = ByteArray(PsxCard.SIZE).also { c ->
+            c[0] = 'M'.code.toByte(); c[1] = 'C'.code.toByte()
+            names.forEachIndexed { i, n -> val f = (i + 1) * 128; c[f] = 0x51; n.toByteArray().copyInto(c, f + 10) }
+        }
+        assertEquals(setOf("BASCUS-94455GT2"), PsxCard.saves(card("BASCUS-94455GT2")))
+        assertTrue(PsxCard.covers(card("A", "B"), card("A")))
+        assertFalse(PsxCard.covers(card("B"), card("A")))
+        assertTrue(PsxCard.saves(ByteArray(10)).isEmpty())
+        // Sega CD's cartridge memory, kept for each game, belongs to its game
+        assertTrue(Saves.belongs("Shining Force CD (USA)_4Mbit_cart.brm", "Shining Force CD (USA)"))
     }
 }
