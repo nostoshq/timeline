@@ -2584,9 +2584,29 @@ class ExtrasTest {
         assertFalse(files["Mupen64Plus-Next/Turok - Dinosaur Hunter (USA) (Rev 2).opt"].orEmpty().contains("astick"))
     }
 
+    @Test fun doom64IsOnTwoSticks() {
+        val files = RetroPack.files(Look(), RetroPack.Paths("/h", "pkg", "/d", "/a"))
+        val rmp = files.getValue("remaps/Mupen64Plus-Next/Doom 64 (USA) (Rev 1).rmp")
+        val keys = rmp.lines().filter { it.contains('=') }.map { it.substringBefore('=').trim() }
+        assertEquals(keys.size, keys.toSet().size)                        // each line once: no player's line given twice
+        for (p in 1..4) {
+            // left stick: walk on the console's stick, strafe on L and R; right stick: turn, and nothing up and down
+            for ((line, id) in listOf("stk_l_x+" to "11", "stk_l_x-" to "10", "stk_l_y+" to "18", "stk_l_y-" to "19",
+                    "stk_r_x+" to "16", "stk_r_x-" to "17", "stk_r_y+" to "-1", "stk_r_y-" to "-1",
+                    "btn_r2" to "12", "btn_l2" to "21", "btn_y" to "20", "btn_x" to "23"))
+                assertTrue("$p $line", rmp.contains("input_player${p}_$line = \"$id\"\n"))
+        }
+        assertTrue(rmp.contains("input_player1_btn_a = \"0\"\n") && rmp.contains("input_player2_btn_a = \"8\"\n"))
+        val n = ControlsNote.of("n64", "doom 64", "ra:mupen64plus_next_gles3", true, "Rewind (hold)" to "Fast-forward (hold)")
+        assertTrue(n, n.startsWith("The left stick walks and strafes"))
+        assertTrue(n.length <= 360)
+        assertFalse(n.contains("—") || n.contains("!"))
+        assertTrue(ControlsNote.of("n64", "doom 64", "ra:mupen64plus_next_gles3", true, null, modern = false).startsWith("A and B are the console's A and B. The right stick is the C buttons"))
+    }
+
     @Test fun theShootersCanHaveTheConsolesOwnControls() {
         val off = RetroPack.files(Look(n64Modern = false), RetroPack.Paths("/h", "pkg", "/d", "/a"))
-        for (stem in RetroPack.twinStick + RetroPack.dualStick) assertNull(stem, off["remaps/Mupen64Plus-Next/$stem.rmp"])
+        for (stem in RetroPack.twinStick + RetroPack.dualStick + RetroPack.DOOM_64) assertNull(stem, off["remaps/Mupen64Plus-Next/$stem.rmp"])
         assertNull(off["Mupen64Plus-Next/Perfect Dark (USA) (Rev 1).cfg"])
         for (stem in RetroPack.dualStick) {                               // the core's own stick back, since RetroArch keeps the last one written
             val opt = off.getValue("Mupen64Plus-Next/$stem.opt")

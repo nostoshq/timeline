@@ -3001,6 +3001,28 @@ object RetroPack {
     }
 
     /**
+     * Doom 64 on two sticks. The game's own first layout, read from its Control Pad page: the stick and d-pad walk with
+     * up and down and turn with left and right, L and R strafe, Z fires, and C-right uses, C-up opens the map and C-left
+     * runs while held. With modern controls on, every player: the left stick walks with up and down and strafes with
+     * left and right (L and R; RetroArch presses a button from a stick past halfway), the right stick turns, and its up
+     * and down do nothing (the game does not look up or down). R2 is Z and fires, L2 runs (C-left), Y uses (C-right) and
+     * X opens the map (C-up), all through the core's right stick, which is its C buttons. A and B change weapons, as in
+     * the game, through [n64Buttons]' A and B.
+     */
+    const val DOOM_64 = "Doom 64 (USA) (Rev 1)"
+
+    fun n64Doom(): String = buildString {
+        for (player in 1..4) {
+            val p = "input_player${player}_"
+            // A and B as [n64Buttons] has them; player 2 is kept for an Xbox controller, as there.
+            if (player == 2) append("${p}btn_a = \"8\"\n${p}btn_b = \"0\"\n") else append("${p}btn_a = \"0\"\n${p}btn_b = \"1\"\n")
+            for ((button, id) in listOf("y" to 20, "x" to 23, "l2" to 21, "r2" to 12)) append("${p}btn_$button = \"$id\"\n")
+            for ((dir, id) in listOf("x+" to 11, "x-" to 10, "y+" to 18, "y-" to 19)) append("${p}stk_l_$dir = \"$id\"\n")
+            for ((dir, id) in listOf("x+" to 16, "x-" to 17, "y+" to -1, "y-" to -1)) append("${p}stk_r_$dir = \"$id\"\n")
+        }
+    }
+
+    /**
      * GoldenEye and Perfect Dark on two sticks. Both games have four styles for two controllers held
      * one in each hand, and in their 2.4 (GoldenEye's Goodhead) the first controller's stick looks and turns and its Z
      * aims, and the second's stick walks and strafes and its Z fires (read from both games' decompiled code: GoldenEye's
@@ -3252,6 +3274,7 @@ object RetroPack {
         // controller connected, their files are left out, and the launcher takes away the ones it wrote before.
         if (look.n64Modern) {
             for (stem in twinStick) out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64TwinStick()
+            out["remaps/Mupen64Plus-Next/$DOOM_64.rmp"] = n64Doom()
             if (look.onePlayer) for (stem in dualStick) {
                 out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64DualStick()
                 out["Mupen64Plus-Next/$stem.cfg"] = out["Mupen64Plus-Next/$stem.cfg"].orEmpty() + cfg(onePad)
@@ -4024,6 +4047,8 @@ object ControlsNote {
         val twin = "A and B are the console's A and B. Move with the left stick and aim with the right; R2 and L2 are Z, which fires."
         val two = "The left stick walks and strafes, the right stick looks, L2 aims and R2 fires; A and B are the console's. Aim and pull back to crouch."
         mapOf("turok - dinosaur hunter" to twin, "turok 2 - seeds of evil" to twin, "tsumi to batsu - hoshi no keishousha" to twin,
+            "doom 64" to "The left stick walks and strafes and the right stick turns. R2 fires and L2 runs while held; Y uses, " +
+                "X opens the map, and A and B change weapons. Too dark? Raise Brightness in Options, Display.",
             "goldeneye 007" to "Once, on the watch: style 2.4 Goodhead and Look Up/Down Upright; the save keeps them. $two The right stick moves the menus.",
             "perfect dark" to "Once, in Control Options: style 2.4 and Reverse Pitch unchecked; your agent file keeps them. $two")
     }

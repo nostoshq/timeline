@@ -1384,9 +1384,9 @@ private fun menu(app: AppState, id: String): MenuDef = when {
             app.toggle("Vibration on scroll", "feel.haptics", true, "A light tick of the motor each time the highlight moves.") { Feel.haptics = it },
             app.toggle("Swap confirm and back", "swapConfirm", false, "For pads that put confirm on the right-hand face button.") { app.swapConfirm = it },
             app.toggle("Nintendo 64 shooters: modern controls", "ra.n64modern", true,
-                "GoldenEye 007, Perfect Dark, both Turoks and Sin and Punishment walk on the left stick and aim with the right. " +
+                "GoldenEye 007, Perfect Dark, both Turoks, Doom 64 and Sin and Punishment walk on the left stick and aim with the right. " +
                     "GoldenEye and Perfect Dark use their two-controller style 2.4, chosen once in the game, and keep the usual controls " +
-                    "when a second player's controller is connected. Off gives all five the console's own controls."),
+                    "when a second player's controller is connected. Off gives all six the console's own controls."),
             Item("Teach M1", if (waiting == "m1") "Press M1 now" else code("m1"),
                 "Press A, then press the M1 button on the top edge. The launcher remembers what it sends and gives it a job inside RetroArch. B backs out.",
                 onA = { app.learning = "m1" }),

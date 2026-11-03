@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0
+
+- **Doom 64 on two sticks.** The left stick walks and strafes and the right stick turns, as a modern shooter plays.
+  R2 fires, L2 runs while held, Y uses doors and switches, X opens the map, and A and B change weapons, as in the
+  game. It is part of **Settings, Controls, Nintendo 64 shooters: modern controls**; off gives Doom 64 the console's
+  own controls.
+- **Doom 64's page says where its brightness is.** Doom 64 is a dark game, and its own Brightness slider makes it
+  much easier to see on a handheld screen: Options, Display, Brightness.
+
 ## 1.7.0
 
 - **GoldenEye 007 and Perfect Dark on two sticks.** With one controller in hand, the left stick walks and strafes,
