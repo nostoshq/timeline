@@ -3146,10 +3146,11 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
      * whose emulator is gone for certain, to be forgotten.
      */
     private fun survey(target: String, targetId: String, held: Map<String, String>, leftAt: Long, skip: String?): Pair<Memory.Step, List<String>> {
-        val gone = held.keys.filter { Proc.gone(ctx, it) }
+        // A process with no window holds no game, whatever was last remembered of it.
+        val gone = held.keys.filter { Proc.gone(ctx, it) || Proc.leftover(ctx, it) }
         val others = emulatorPackages().filter { it != target && it != skip && !it.startsWith("com.retroarch") }.mapNotNull { pkg ->
             val id = emulatorOf(pkg)?.takeIf { it in Memory.BIG } ?: return@mapNotNull null
-            val up = Proc.running(ctx, pkg)
+            val up = Proc.running(ctx, pkg)?.takeUnless { it && Proc.leftover(ctx, pkg) }
             var idle = false
             if (up == true && id == "dolphin" && endsOnLeave(pkg)) {
                 val wait = DOLPHIN_CLOSE_MS - (SystemClock.uptimeMillis() - leftAt)
@@ -3585,7 +3586,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         if (heldOpen.isNotEmpty()) {
             val keys = heldOpen.keys.toList()
             scope.launch {
-                val gone = withContext(Dispatchers.IO) { if (!Bridge.present) emptyList() else keys.filter { Proc.gone(ctx, it) } }
+                val gone = withContext(Dispatchers.IO) { if (!Bridge.present) emptyList() else keys.filter { Proc.gone(ctx, it) || Proc.leftover(ctx, it) } }
                 if (gone.isNotEmpty()) setHeld(heldOpen - gone.toSet())
             }
         }

@@ -1897,6 +1897,8 @@ class ExtrasTest {
         // capitals in a package name (Cemu's) are allowed
         assertEquals("am force-stop info.cemu.Cemu", Vendor.forceStop("info.cemu.Cemu")); assertNull(Vendor.forceStop("x; rm -rf /"))
         assertEquals(true, Proc.parse("yes\n")); assertEquals(false, Proc.parse("no")); assertNull(Proc.parse("")); assertNull(Proc.parse(null)); assertNull(Proc.parse("unknown"))
+        // an emulator counts as open only with a window: a leftover process with none holds no game
+        assertTrue(Proc.windowScript.contains("dumpsys activity activities") && Proc.windowScript.contains("Hist +#[0-9]+: ActivityRecord\\{[^ ]+ u[0-9]+ \$1/") && Proc.windowScript.contains("echo unknown"))
         // the PS2 look: only its two files, copied when they differ and given to ARMSX2
         val ps2 = Ps2Look.script("com.armsx2", 10120, "/data/user/0/market.nostos.timeline/files/armsx2-shaders")
         assertTrue(ps2.contains("/data/media/0/Android/data/com.armsx2/files/shaders/timeline") && ps2.contains("chown -h 10120:1078"))

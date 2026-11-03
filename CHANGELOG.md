@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+- **No more asking about an emulator that is closed.** An emulator closed from its own menu, hakuX especially, can
+  leave an empty process behind with no screen. Timeline took that for an open emulator and asked about it before
+  every game. An emulator now counts as open only while it has a screen.
+
 ## 1.3.1
 
 - **Dreamcast, bright again.** Its VGA monitor had sunk dark games such as MDK2 into near black: the gaps between its

@@ -689,6 +689,25 @@ object Proc {
 
     /** Gone for certain: "no" twice, a moment apart. */
     fun gone(ctx: Context, pkg: String): Boolean = running(ctx, pkg) == false && run { Thread.sleep(300); running(ctx, pkg) == false }
+
+    /**
+     * Whether the app has a window: any of its screens in Android's task history, shown or behind. An emulator closed
+     * from its own menu often leaves its process behind with no screen at all (Android's "cached-empty"), which holds no
+     * game; it was taken for an open emulator and asked about. Null when it could not be told.
+     */
+    val windowScript = "l=${'$'}(dumpsys activity activities) || { echo unknown; exit 0; }\n" +
+        "case \"${'$'}l\" in *\"ActivityRecord{\"*) ;; *) echo unknown; exit 0 ;; esac\n" +
+        "printf '%s\\n' \"${'$'}l\" | grep -qE \"Hist +#[0-9]+: ActivityRecord\\{[^ ]+ u[0-9]+ ${'$'}1/\" && echo yes || echo no\n"
+
+    fun hasWindow(ctx: Context, pkg: String): Boolean? {
+        if (!PACKAGE.matches(pkg)) return null
+        val file = java.io.File(ctx.filesDir, "window.sh")
+        if (!Scripts.write(file, windowScript)) return null
+        return parse(Bridge.read("timeout 5 sh ${file.absolutePath} $pkg"))
+    }
+
+    /** Running, but with no window: a leftover process, holding nothing. */
+    fun leftover(ctx: Context, pkg: String): Boolean = hasWindow(ctx, pkg) == false
 }
 
 /**
