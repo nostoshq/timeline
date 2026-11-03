@@ -178,8 +178,10 @@ class MainActivity : ComponentActivity() {
         hideBars()
         app.lookAtTheDate()                                    // "This week in history" follows the calendar
         lastInput = SystemClock.uptimeMillis()
-        // The rate the panel is running at right now, which a power saver or a system setting may hold below its best.
-        @Suppress("DEPRECATION") windowManager.defaultDisplay?.refreshRate?.takeIf { it >= 30f }?.let { app.refreshRate = it }
+        // The rate games get on the panel: its best at this size, held down only by the power saver or Android's own
+        // ceiling. Not the rate it shows this instant: just back from a game that ran at 60 (docked, then undocked), the
+        // panel can still be at 60 for a moment, and every game after would have been set for 60.
+        panelHz()?.let { app.refreshRate = it }
         app.returned()
         app.rescan()
     }
@@ -198,6 +200,16 @@ class MainActivity : ComponentActivity() {
     private val saverWatcher = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { readSaver() }
     }
+
+    private fun panelHz(): Float? = runCatching {
+        @Suppress("DEPRECATION") val display = windowManager.defaultDisplay ?: return null
+        val now = display.mode
+        val best = display.supportedModes.filter { it.physicalWidth == now.physicalWidth && it.physicalHeight == now.physicalHeight }
+            .maxOfOrNull { it.refreshRate } ?: now.refreshRate
+        val peak = android.provider.Settings.System.getFloat(contentResolver, "peak_refresh_rate", 0f).takeIf { it >= 30f } ?: Float.MAX_VALUE
+        val saver = if (getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true) 60f else Float.MAX_VALUE
+        minOf(best, peak, saver).takeIf { it >= 30f }
+    }.getOrNull()
 
     private fun readSaver() {
         app.powerSave = runCatching { getSystemService(android.os.PowerManager::class.java).isPowerSaveMode }.getOrDefault(false)

@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.4.0
+
+- **Brighter televisions and arcade monitors.** The sets had the same light budget the Dreamcast's monitor had before
+  1.3.1, so dark rooms in Resident Evil or Silent Hill sank into black. The shadows now come back to the panel's, about
+  a third of the raw picture's light in dark grays instead of a fifth, with the lines and the slot mask still plainly in
+  view.
+- **480 lines on RGB.** A 480-line picture on an RGB cable was drawn as separate lines under the slot mask and came out
+  as a checkerboard. Every television cable now blends the two fields as a set did, in either look; only the
+  Dreamcast's VGA box keeps its lines.
+- **PlayStation gets a DualShock.** Every port now has the analog controller instead of the plain digital pad, so the
+  games made for its sticks play with them, and Ape Escape starts. It powers on in digital mode, as the real one did,
+  with the left stick working the d-pad; a game that wants the sticks turns them on itself.
+- **Link's Awakening saves.** Its only save screen is A, B, START and SELECT together, which also closed the game.
+  START and SELECT now leave it when pressed twice; RetroArch says so after the first.
+- **Upright arcade games on a television** stand upright in the middle of the screen with their usual controls,
+  rather than lying on their side.
+- **Nintendo 64 on an Xbox controller.** Player 2's A and B now match the labels, as in Dolphin.
+- Pokemon Yellow runs as a Game Boy under the Game Boy's own screen, so its four shades stay apart. DS sound gets the
+  48 ms buffer the other systems have. Paper Mario's intro draws correctly. PAL Nintendo 64 games skip black frames.
+- **Fewer surprises.**
+  - A game you left while it was getting ready no longer opens behind you.
+  - Going back to the RetroArch game that is already open no longer asks about other emulators.
+  - Dolphin's files are not written while a game is running.
+  - Closing an emulator waits for Dolphin to finish putting the last game away.
+  - Another game's GameCube or Wii place is renamed aside rather than cleared.
+  - A save put back for a GameCube or Wii game sets its place aside.
+  - Charge care counts a game left asleep on the charger as not in use.
+  - The panel's rate is read as its best, not the 60 it can still show just after undocking.
+- **Menus.**
+  - The button hints show only what the highlighted row answers to, and every setting's note has room for six lines.
+  - Leaving instructions follow Keep your place, and on GameCube and Wii they say Home keeps it only where it does.
+  - Run lighter appears only where it changes something.
+  - "1 game", long titles cut the same way everywhere, and clearer Signal, motion and sharper-look notes.
+
 ## 1.3.2
 
 - **No more asking about an emulator that is closed.** An emulator closed from its own menu, hakuX especially, can

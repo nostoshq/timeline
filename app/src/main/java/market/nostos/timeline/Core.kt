@@ -2065,8 +2065,11 @@ object RetroPack {
      */
     private fun gambatte(look: Look, gbc: Boolean): Map<String, String> {
         val trueLcd = look.handheld == TRUE_LCD
+        // A Game Boy game made to show color on a Game Boy Color (Pokemon Yellow) is run as the Game Boy it is filed under
+        // with the original screen, whose shader reads four shades of ink: in color, its tones ran together.
         val base = mapOf("gambatte_gbc_color_correction" to "GBC only", "gambatte_gbc_color_correction_mode" to "accurate",
-            "gambatte_gbc_frontlight_position" to "central", "gambatte_dark_filter_level" to "0")
+            "gambatte_gbc_frontlight_position" to "central", "gambatte_dark_filter_level" to "0",
+            "gambatte_gb_hwmode" to if (!gbc && trueLcd) "GB" else "Auto")
         return base + when {
             gbc -> mapOf("gambatte_gb_colorization" to "GBC", "gambatte_mix_frames" to if (trueLcd) "disabled" else "mix")
             trueLcd -> mapOf("gambatte_gb_colorization" to "disabled", "gambatte_mix_frames" to "disabled")
@@ -2281,8 +2284,8 @@ object RetroPack {
      * the phosphors as [Display] says, the lit color let through half again and the others half (maskDark 0.5,
      * maskLight 1.5), easing in bright parts (thres 0.3), never GDV's own dark column, which is no phosphor pattern; a
      * tenth more light in bright parts and a tenth of glow, which give back what the mask takes (measured on a bright
-     * frame: the same average light as no mask, white brighter); no extra saturation; gamma out 2.3, which on this 2.2
-     * panel centers the whole curve on a tube's 2.4; no vignette.
+     * frame: the same average light as no mask, white brighter); no extra saturation; gamma out as [Display] says
+     * (2.6 for every set and monitor now, which keeps dark scenes out of black under the lines and the mask); no vignette.
      */
     private fun gdvParams(look: Look, glsl: Boolean, display: Display = Display.TV): List<String> = listOf(
         "sat = \"${satValue(look)}\"", "beam_max = \"2.50\"", "brightboost = \"1.10\"", "glow = \"0.10\"",
@@ -2309,9 +2312,15 @@ object RetroPack {
      * beam row); 6 keeps the lines plain in dark and middle tones (0.46 and 0.71) and lets bright lines bloom shut, as a
      * monitor's did. Gamma out 2.6 lifts the shadows GDV's tube curve sinks below a 2.2 panel's (a fifth of a dark
      * gray's light was left), and it takes the player's white rather than 9300 K, which cost a quarter of the light.
+     *
+     * The sets and arcade monitors had the same budget as the old Dreamcast (worked out for every console: 0.18 of the
+     * raw picture's light in dark grays, 0.31 in middle grays, 0.36 in white, the beam's dark refresh included), so dark
+     * rooms in Resident Evil or Silent Hill sank into black. Gamma out 2.6 and scanline 9 bring them to about 0.32 / 0.40
+     * / 0.39, the same tone curve as the 480-line television (about 2.3 against white), with the gap rows still plainly
+     * darker than the beam rows (0.51 / 0.61 / 0.89 of them) and the mask untouched.
      */
-    enum class Display(val scanline: String, val mask: String, val ownWhite: String?, val gamma: String = "2.3") {
-        TV("10.0", SLOT, null), ARCADE("10.0", SLOT, "3.0"), MONITOR("6.0", GRILLE, null, "2.6")
+    enum class Display(val scanline: String, val mask: String, val ownWhite: String?, val gamma: String) {
+        TV("9.0", SLOT, null, "2.6"), ARCADE("9.0", SLOT, "3.0", "2.6"), MONITOR("6.0", GRILLE, null, "2.6")
     }
     private fun whiteFor(look: Look, display: Display) = display.ownWhite ?: whiteValue(look)
 
@@ -2329,7 +2338,7 @@ object RetroPack {
      * console's own size both ways (Nintendo 64: 1280 x 960 to 320 x 240, close to what its video chip put out), and a
      * picture of 400 lines or more is drawn without gaps between its lines: those consoles sent 480 interlaced lines,
      * whose two fields fill each other's gaps on a television. Only the Dreamcast's VGA box, a progressive picture on a
-     * monitor, keeps them. The sharper look keeps the extra detail across and draws lines at every count, as before.
+     * monitor, keeps them, in either look. The sharper look keeps the extra detail across.
      */
     fun crt3dPreset(look: Look, p: Paths, halvings: Int, glsl: Boolean, beam: Boolean = false, group: String = "", native: Boolean = false): String {
         val dir = "${p.home}/${Crt3d.DIR}"
@@ -2379,11 +2388,12 @@ object RetroPack {
         if (!glsl) lines += "wrap_mode$c = \"clamp_to_border\""
         lines += "scale_type$c = \"viewport\""
         params += gdvParams(look, glsl, display)
-        // 480-line pictures. On a television cable (composite, S-video) their interlaced fields blend on a set: GDV
-        // averages each pair of lines (gdv_hires 400). Through VGA or RGB, or in the sharper look, each line is drawn as
-        // its own beam, one panel row of beam and one of gap (Crt3d.slang's quarter-line phase): fine distinct lines, as a
-        // monitor showed them.
-        params += "gdv_hires = \"" + (if (look.sharp || clean) "0.0" else "400.0") + "\""
+        // 480-line pictures. Sent to a television (composite, S-video or RGB), their interlaced fields blend on the set:
+        // GDV averages each pair of lines (gdv_hires 400). Only the Dreamcast's VGA box sent a progressive 480 to a
+        // monitor, drawn as its own beams, one panel row of beam and one of gap (Crt3d.slang's quarter-line phase). (Drawn
+        // as lines under a television's slot mask, whose two-row pattern locks onto beam and gap rows, 480 lines made a
+        // checkerboard.)
+        params += "gdv_hires = \"" + (if (signal == "VGA") "0.0" else "400.0") + "\""
         if (b == 1) { if (steady) params += "GAIN_VS_BLUR = \"0.5\"" else beamSettings(params) }
         return (listOf("shaders = \"${c + 1}\"") + lines + params).joinToString("\n") + "\n"
     }
@@ -2505,6 +2515,9 @@ object RetroPack {
         "swanstation_GPU_ScaledDithering" to "false",
         "swanstation_GPU_PGXPEnable" to sharp.toString(),
         "swanstation_GPU_TextureFilter" to "Nearest",
+        // The DualShock (dualShock): in digital mode, as it powered on, the left stick also works the d-pad.
+        "swanstation_Controller1_AnalogDPadInDigitalMode" to "true", "swanstation_Controller2_AnalogDPadInDigitalMode" to "true",
+        "swanstation_Controller3_AnalogDPadInDigitalMode" to "true", "swanstation_Controller4_AnalogDPadInDigitalMode" to "true",
         "swanstation_Display_ShowOSDMessages" to "false")      // the core's own notes ("PGXP culling disabled..."), not wanted either
     private fun beetlePsx(look: Look, sharp: Boolean, four: Boolean = false) = mapOf(
         "beetle_psx_hw_enable_multitap_port1" to if (four) "enabled" else "disabled",
@@ -2514,6 +2527,8 @@ object RetroPack {
         "beetle_psx_hw_dither_mode" to if (sharp) "disabled" else "1x(native)",
         "beetle_psx_hw_pgxp_mode" to if (sharp) "memory only" else "disabled",
         "beetle_psx_hw_filter" to "nearest",
+        // The DualShock (dualShock) as it was: digital at power-on, analog when a game asks for it or the combo is held.
+        "beetle_psx_hw_analog_toggle" to "enabled",
         "beetle_psx_hw_display_osd" to "disabled")
     // With the face buttons turned by [n64Buttons] (A is the N64's A, B its B), these keep R2's C buttons where they sat
     // before: the right face button C-right, the bottom one C-down, the left one C-left, the top one C-up. The core's
@@ -2553,16 +2568,36 @@ object RetroPack {
 
     /**
      * Nintendo 64: the core puts the N64's A on the bottom face button and its B on the left one. This puts them on the
-     * buttons marked A and B instead (the Nova's, and any Nintendo-style pad's), for all four players. The left face
-     * button, which carried B, now does nothing outside R2's C-button mode, as the right one did before.
+     * buttons marked A and B instead (the Nova's, and any Nintendo-style pad's), for players 1, 3 and 4. Player 2 is
+     * kept for an Xbox controller (Players.RETRO_TWO), whose A is the bottom button and B the right one: the core's own
+     * layout already matches its labels, as Dolphin's does. The left face button, which carried B, now does nothing
+     * outside R2's C-button mode, as the right one did before.
      */
     fun n64Buttons(): String = buildString {
         for (player in 1..4) {
+            if (player == 2) {
+                // Said outright, as the core has it: a file from an earlier version turned player 2 too, and a merge
+                // keeps every line it is not given.
+                append("input_player2_btn_a = \"8\"\n"); append("input_player2_btn_b = \"0\"\n"); append("input_player2_btn_y = \"1\"\n")
+                continue
+            }
             append("input_player${player}_btn_a = \"0\"\n")     // A: the core's B, the N64's A
             append("input_player${player}_btn_b = \"1\"\n")     // B: the core's Y, the N64's B
             append("input_player${player}_btn_y = \"8\"\n")     // Y: the core's A, a C button under R2 only
         }
     }
+    /**
+     * PlayStation: a DualShock in all four ports instead of the core's plain digital pad, so the games made for its sticks
+     * play (Ape Escape will not start without one) and rumble. Each core numbers it its own way: SwanStation 261, Beetle
+     * 517 (read from the cores). It powers on in digital mode, as the real one did; a game that wants the sticks turns
+     * them on itself.
+     */
+    fun dualShock(device: Int): String = (1..4).joinToString("") { "input_libretro_device_p$it = \"$device\"\n" }
+
+    /** A Game Boy game that saves only with A, B, START and SELECT together, the combination that also leaves: Link's Awakening. */
+    fun savesOnAllFour(system: String, name: String): Boolean =
+        system in setOf("gb", "gbc") && name.lowercase().let { "link's awakening" in it || "new awakening" in it }
+
     /**
      * Dreamcast. The true picture is its own 640 x 480 with plain texture filtering, as the console drew it; the sharper
      * look draws at 1280 x 960 with anisotropic filtering at 16, which keeps far textures sharp. The console is told the
@@ -2576,20 +2611,23 @@ object RetroPack {
     /** Nintendo 64 games that need a frame copy GLideN64's own list gives them upstream but this core's copy does not. */
     val n64Fixes: Map<String, Map<String, String>> = mapOf(
         "Legend of Zelda, The - Majora's Mask (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),   // the Lens of Truth and the pause screen
+        "Paper Mario (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),      // its intro (the core's own note on the option)
    )
 
-    fun files(look: Look, p: Paths, pal: List<Pair<String, String>> = emptyList(), arcade: List<String> = emptyList()): Map<String, String> {
+    fun files(look: Look, p: Paths, pal: List<Pair<String, String>> = emptyList(), arcade: List<String> = emptyList(),
+              handheld: List<Pair<String, String>> = emptyList()): Map<String, String> {
         val out = LinkedHashMap<String, String>()
-        // Upright arcade games: the core turns the picture for those games only, and each gets its turned controls.
-        val turn = look.upright != "Keep it level"
+        // Upright arcade games: the core turns the picture for those games only, and each gets its turned controls. On a
+        // television, which cannot be turned, they stand upright in the middle of the screen with their usual controls.
+        val turn = !look.tv && look.upright != "Keep it level"
         // MAME 2003-Plus, when chosen for arcade games, opens on its own notices (a copying disclaimer, "this game does not
         // work perfectly") that wait for a key: straight to the game instead.
         out["MAME 2003-Plus/MAME 2003-Plus.opt"] = cfg(mapOf("mame2003-plus_skip_disclaimer" to "enabled", "mame2003-plus_skip_warnings" to "enabled",
             "mame2003-plus_tate_mode" to if (turn) "enabled" else "disabled"))
-        out["FinalBurn Neo/FinalBurn Neo.opt"] = cfg(mapOf("fbneo-vertical-mode" to when (look.upright) {
-            "Right side down" -> "TATE alternate"
-            "Left side down" -> "TATE"
-            else -> "disabled"
+        out["FinalBurn Neo/FinalBurn Neo.opt"] = cfg(mapOf("fbneo-vertical-mode" to when {
+            !turn -> "disabled"
+            look.upright == "Right side down" -> "TATE alternate"
+            else -> "TATE"
         }))
         if (turn) for (set in arcade) if (set.lowercase() in uprightSets)
             out["remaps/FinalBurn Neo/$set.rmp"] = turned(look.upright == "Right side down")
@@ -2678,6 +2716,9 @@ object RetroPack {
         if (look.subframes3d || look.blackFrames3d) for ((core, systems) in threeD) if (core in beamed)
             for ((system, stem) in pal) if (system in systems)
                 out["$core/$stem.cfg"] = cfg(mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0"))
+        // Nintendo 64's black frames come from its own file, not the beam's list: its 50 Hz games skip them too.
+        if (n64Frames(look)) for ((system, stem) in pal) if (system == "n64")
+            out["Mupen64Plus-Next/$stem.cfg"] = cfg(mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0"))
         // Without the CRT look, the beam alone.
         if (look.subframes3d && !(look.crt3d && look.crt3dSlang)) for (core in beamed)
             out["$core/$core.slangp"] = "shaders = \"1\"\n" + beamPass(p, core == "Flycast") + "\nscale_type0 = \"viewport\"\n" +
@@ -2737,6 +2778,12 @@ object RetroPack {
         out["Beetle PSX HW/Beetle PSX HW.opt"] = cfg(beetlePsx(look, look.sharp))
         out["Mupen64Plus-Next/Mupen64Plus-Next.opt"] = cfg(mupen(true, n64Parallel(look)))
         out["remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp"] = n64Buttons()
+        out["remaps/SwanStation/SwanStation.rmp"] = dualShock(261)
+        out["remaps/Beetle PSX HW/Beetle PSX HW.rmp"] = dualShock(517)
+        // Link's Awakening saves only with A, B, START and SELECT together, which would close the game first: START and
+        // SELECT leave it when pressed twice (RetroArch says so after the first).
+        for ((system, stem) in handheld) if (savesOnAllFour(system, stem))
+            for (core in listOf("Gambatte", "mGBA")) out["$core/$stem.cfg"] = cfg(mapOf("quit_press_twice" to "true"))   // either may be chosen for them
         // Dreamcast: a memory card of its own for every game, kept with the other saves. The core's usual way is one
         // card shared by all of them, in the system folder where the backup does not look, and 200 blocks fill up fast.
         out["Flycast/Flycast.opt"] = cfg(flycast(look, look.sharp))
@@ -2795,7 +2842,7 @@ object RetroPack {
             // would then fall behind by every hour the device was off, and Pokemon's days would stop passing.
             "melonds_start_time_mode" to "sync"))
         // Not one of the 8 and 16-bit systems lag reduction is for: a DS state is several megabytes to copy every frame.
-        out["melonDS DS/melonDS DS.cfg"] = cfg(old + lagOff + mapOf("video_scale_integer" to "false", "video_smooth" to "false"))
+        out["melonDS DS/melonDS DS.cfg"] = cfg(old + lagOff + quickSound + mapOf("video_scale_integer" to "false", "video_smooth" to "false"))
         out["melonDS DS/melonDS DS.slangp"] = dsScreen(p)
         // NES: the core's composite-video filter stays off. The CRT shader is the television here; both at once blur
         // the picture twice and widen it to 602 columns. (It was found switched on in a test device's stored options.)
@@ -3014,7 +3061,7 @@ object FirstRun {
 
         f.dolphin?.let { granted ->
             out += SetupStep("dolphinset", "Dolphin's settings", if (granted) "Written" else "Press A, then Use this folder",
-                if (granted) "Timeline keeps Dolphin set up: this device's buttons and sticks mapped, Vulkan, twice the detail, shaders prepared before a game starts, and no touch buttons over the picture."
+                if (granted) "Timeline keeps Dolphin set up: this device's buttons and sticks mapped, Vulkan, the console's own detail (twice it with the sharper look), shaders prepared before a game starts, and no touch buttons over the picture."
                 else "Android shows Dolphin's own folder. Choose Use this folder, then Allow. Timeline then sets Dolphin up for this device, controls included. Without this step its games do not answer the buttons.",
                 granted)
         }
@@ -3397,9 +3444,9 @@ object ControlsNote {
 
     /**
      * [emulator] is the id the game opens in; [dolphinLayout] whether the launcher sets Dolphin's controls; [extras]
-     * what M1 and M2 do on this system when they have been taught, or null.
+     * what M1 and M2 do on this system when they have been taught, or null; [keeps] whether the place is kept on leaving.
      */
-    fun of(system: String, base: String, emulator: String, dolphinLayout: Boolean, extras: Pair<String, String>?): String {
+    fun of(system: String, base: String, emulator: String, dolphinLayout: Boolean, extras: Pair<String, String>?, keeps: Boolean = true): String {
         val parts = ArrayList<String>()
         when {
             emulator.startsWith("ra:") -> {
@@ -3408,11 +3455,13 @@ object ControlsNote {
                     val m = listOfNotNull(doing[extras.first]?.let { "M1 $it" }, doing[extras.second]?.let { "M2 $it" })
                     if (m.isNotEmpty()) parts += m.joinToString(", ").replaceFirstChar { it.uppercase() } + "."
                 }
-                parts += "START and SELECT together leave and keep your place."
+                val leave = if (RetroPack.savesOnAllFour(system, base)) "START and SELECT pressed twice leave" else "START and SELECT together leave"
+                parts += if (keeps) "$leave and keep your place." else "$leave."
             }
             emulator == "dolphin" -> {
                 if (dolphinLayout) parts += if (system == "wii") wiiOwn[base] ?: REMOTE else CUBE
-                parts += "To leave: Back, then Exit Emulation."
+                // Home leaves with Dolphin's state taken in (settleDolphin); its own Exit Emulation saves nothing.
+                parts += if (keeps) "Home leaves and keeps your place. Back, then Exit Emulation, starts it fresh next time." else "To leave: Back, then Exit Emulation."
             }
             emulator.isNotEmpty() -> parts += "To leave, use the emulator's own menu."
         }

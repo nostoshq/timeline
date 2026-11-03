@@ -59,7 +59,8 @@ ramp.
 Then the CRT. The default is GDV Mini Ultra from RetroArch's shader collection, set as a tube seen up close, so you
 see its pixels and not only its lines:
 
-- the tube's own gamma, so shadows and highlights sit where they did;
+- the tube's own gamma, so shadows and highlights sit where they did, with enough light left under the lines and the
+  mask that dark rooms stay out of black;
 - scanlines centered on their lines, with bright lines blooming into the gaps between them;
 - the phosphors: a slot mask, red, green and blue slots in staggered rows, as most American sets had;
 - a tenth more light and a little glow in bright parts, which give back what the mask takes; no extra saturation, so
@@ -103,12 +104,12 @@ The PlayStation, Nintendo 64, Saturn and Dreamcast drew low-resolution 3D. Timel
 - **Saturn** at its own resolution, its interlaced hi-res games drawn field by field as a set drew them.
 - **Dreamcast** at its own 640 by 480.
 
-A picture of 480 lines on a television cable is drawn without gaps between its lines: those consoles sent their lines
-interlaced, and on a set each field filled the other's gaps. Through the Dreamcast's VGA box, each line is drawn as
-its own beam, as a monitor showed it.
+A picture of 480 lines sent to a television, by any cable including RGB, is drawn without gaps between its lines: those
+consoles sent their lines interlaced, and on a set each field filled the other's gaps. Through the Dreamcast's VGA box,
+each line is drawn as its own beam, as a monitor showed it. This holds in either look.
 
 **3D consoles: sharper than the console** draws the PlayStation and Dreamcast at 960 lines with clean edges and no
-wobble, keeps the Nintendo 64's extra detail across, and draws lines on 480-line pictures, like a monitor. A game that
+wobble, GameCube and Wii at twice their detail, and keeps the Nintendo 64's extra detail across. A game that
 struggles can be run at its own resolution from its page: **Options, Run lighter**. After a sitting with more than 5%
 of its pictures late, the page says so and X does the same.
 

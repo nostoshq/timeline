@@ -344,7 +344,9 @@ class ShelfAndHistoryTest {
             ControlsNote.of("snes", "candlewick rising", "ra:snes9x", true, "Rewind (hold)" to "Fast-forward (hold)"))
         assertTrue(ControlsNote.of("wii", "mario kart wii", "dolphin", true, null).startsWith("Played on the GameCube layout"))
         assertTrue(ControlsNote.of("wii", "comet garden", "dolphin", true, null).startsWith("Left stick: the Nunchuk"))
-        assertEquals("To leave: Back, then Exit Emulation.", ControlsNote.of("gc", "burrow brigade", "dolphin", false, null))
+        assertEquals("To leave: Back, then Exit Emulation.", ControlsNote.of("gc", "burrow brigade", "dolphin", false, null, keeps = false))
+        assertEquals("Home leaves and keeps your place. Back, then Exit Emulation, starts it fresh next time.", ControlsNote.of("gc", "burrow brigade", "dolphin", false, null))
+        assertEquals("START and SELECT together leave.", ControlsNote.of("snes", "candlewick rising", "ra:snes9x", true, null, keeps = false))
         for (s in listOf("ra:stella", "ra:fbneo", "ra:mupen64plus_next_gles3", "ra:melondsds"))
             assertTrue(s, ControlsNote.of("x", "y", s, true, "Rewind (hold)" to "Fast-forward (hold)").length <= 260)
     }
@@ -1673,10 +1675,45 @@ class ExtrasTest {
         assertNull(Vendor.write("/sys/class/sn3112l/led", "brightness", "1-1:1:1 > /x"))
     }
 
+    @Test fun eachSystemGetsTheControlsAndFixesItsGamesNeed() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val ladx = "Legend of Zelda, The - Link's Awakening DX (USA, Europe) (Rev 2) (SGB Enhanced) (GB Compatible)"
+        val files = RetroPack.files(Look(), p, handheld = listOf("gbc" to ladx, "gbc" to "Lantern Keep (USA)"))
+        // PlayStation: a DualShock in every port, each core by its own number, digital at power-on with the stick on the d-pad
+        assertEquals((1..4).joinToString("") { "input_libretro_device_p$it = \"261\"\n" }, files.getValue("remaps/SwanStation/SwanStation.rmp"))
+        assertTrue(files.getValue("remaps/Beetle PSX HW/Beetle PSX HW.rmp").contains("input_libretro_device_p1 = \"517\""))
+        assertTrue(files.getValue("SwanStation/SwanStation.opt").contains("swanstation_Controller1_AnalogDPadInDigitalMode = \"true\""))
+        assertTrue(files.getValue("Beetle PSX HW/Beetle PSX HW.opt").contains("beetle_psx_hw_analog_toggle = \"enabled\""))
+        // Link's Awakening: START and SELECT twice, so its save screen (A, B, START and SELECT) opens; no other game
+        assertEquals("quit_press_twice = \"true\"\n", files.getValue("Gambatte/$ladx.cfg"))
+        assertEquals("quit_press_twice = \"true\"\n", files.getValue("mGBA/$ladx.cfg"))
+        assertNull(files["Gambatte/Lantern Keep (USA).cfg"])
+        assertTrue(ControlsNote.of("gbc", Titles.base("$ladx.gbc"), "ra:gambatte", true, null).contains("START and SELECT pressed twice leave and keep your place."))
+        assertTrue(ControlsNote.of("gbc", "lantern keep", "ra:gambatte", true, null).contains("START and SELECT together leave"))
+        // the original Game Boy's screen runs a Game Boy game as a Game Boy, even one that colors itself on a Color
+        val lcd = RetroPack.files(Look(handheld = RetroPack.TRUE_LCD), p)
+        assertTrue(lcd.getValue("Gambatte/gb.opt").contains("gambatte_gb_hwmode = \"GB\""))
+        assertTrue(lcd.getValue("Gambatte/gbc.opt").contains("gambatte_gb_hwmode = \"Auto\""))
+        assertTrue(RetroPack.files(Look(handheld = "LCD3x"), p).getValue("Gambatte/gb.opt").contains("gambatte_gb_hwmode = \"Auto\""))
+        // the DS's sound as quick as the other systems'; Paper Mario's intro
+        assertTrue(files.getValue("melonDS DS/melonDS DS.cfg").contains("audio_latency = \"48\""))
+        assertTrue(files.getValue("Mupen64Plus-Next/Paper Mario (USA).opt").contains("mupen64plus-EnableCopyAuxToRDRAM = \"True\""))
+        // upright arcade games stand level on a television, with their usual controls
+        val turned = RetroPack.files(Look(), p, arcade = listOf("galaga"))
+        assertNotNull(turned["remaps/FinalBurn Neo/galaga.rmp"])
+        assertTrue(turned.getValue("FinalBurn Neo/FinalBurn Neo.opt").contains("fbneo-vertical-mode = \"TATE alternate\""))
+        val docked = RetroPack.files(Look(tv = true), p, arcade = listOf("galaga"))
+        assertNull(docked["remaps/FinalBurn Neo/galaga.rmp"])
+        assertTrue(docked.getValue("FinalBurn Neo/FinalBurn Neo.opt").contains("fbneo-vertical-mode = \"disabled\""))
+        assertTrue(docked.getValue("MAME 2003-Plus/MAME 2003-Plus.opt").contains("mame2003-plus_tate_mode = \"disabled\""))
+    }
+
     @Test fun nintendo64AAndBAreTheButtonsMarkedAAndB() {
         val files = RetroPack.files(Look(), RetroPack.Paths("/h", "pkg", "/d", "/a"))
         val remap = files.getValue("remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp")
-        for (p in 1..4) {
+        // player 2's Xbox controller: the core's own layout, which matches its labels, said outright over an older file
+        for (line in listOf("input_player2_btn_a = \"8\"", "input_player2_btn_b = \"0\"", "input_player2_btn_y = \"1\"")) assertTrue(line, remap.contains(line))
+        for (p in listOf(1, 3, 4)) {
             assertTrue(remap.contains("input_player${p}_btn_a = \"0\""))    // A sends what the core reads as the N64's A
             assertTrue(remap.contains("input_player${p}_btn_b = \"1\""))    // B, its B
             assertTrue(remap.contains("input_player${p}_btn_y = \"8\""))
@@ -1725,7 +1762,7 @@ class ExtrasTest {
         // ...on a PC monitor of its day, kept bright: lines plain in dark parts and blooming shut in bright ones, the
         // shadows lifted back to the panel's, and the player's white
         assertTrue(dc.contains("scanline = \"6.0\"") && dc.contains("gamma_out_green = \"2.6\"") && dc.contains("tl_white = \"2.0\""))
-        assertTrue(psx.contains("scanline = \"10.0\"") && psx.contains("gamma_out_green = \"2.3\""))      // the sets unchanged
+        assertTrue(psx.contains("scanline = \"9.0\"") && psx.contains("gamma_out_green = \"2.6\""))      // a television, at its own light
         assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_cable_type = \"VGA\""))
         val tvdc = RetroPack.files(off.copy(signal = mapOf("dreamcast" to "Composite")), p)
         assertTrue(tvdc.getValue("Flycast/Flycast.slangp").let { it.contains("shaders = \"3\"") && it.contains("tl_width = \"320.0\"") && it.contains("gdv_hires = \"400.0\"") })
@@ -1736,11 +1773,12 @@ class ExtrasTest {
         val n64 = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp")
         assertTrue(n64.contains("shaders = \"5\"") && n64.contains("shader0 = \"/h/shaders/timeline/stock.glsl\"") && n64.contains("scale_x0 = \"0.5\"") && n64.contains("scale_y1 = \"0.5\"") &&
             n64.contains("shader2 = \"/h/shaders/timeline/timeline-signal.glsl\"") && n64.contains("shader3 = \"/h/shaders/timeline/timeline-colour.glsl\"") &&
-            n64.contains("shader4 = \"/h/shaders/timeline/crt-gdv-3d.glsl\"") && n64.contains("gamma_out = \"2.3\""))
-        // the sharper look: four times, PlayStation brought back to its lines only, and lines drawn at every count
+            n64.contains("shader4 = \"/h/shaders/timeline/crt-gdv-3d.glsl\"") && n64.contains("gamma_out = \"2.6\""))
+        // the sharper look: four times, PlayStation brought back to its lines only; 480 lines on a television still blend
         val sharp = RetroPack.files(off.copy(sharp = true), p)
         val spsx = sharp.getValue("SwanStation/SwanStation.slangp")
-        assertTrue(spsx.contains("shaders = \"5\"") && spsx.contains("scale_x0 = \"1.0\"") && spsx.contains("scale_y1 = \"0.5\"") && spsx.contains("gdv_hires = \"0.0\""))
+        assertTrue(spsx.contains("shaders = \"5\"") && spsx.contains("scale_x0 = \"1.0\"") && spsx.contains("scale_y1 = \"0.5\"") && spsx.contains("gdv_hires = \"400.0\""))
+        assertTrue(RetroPack.files(off.copy(sharp = true, signal = mapOf("psx" to "RGB")), p).getValue("SwanStation/SwanStation.slangp").contains("gdv_hires = \"400.0\""))
         assertTrue(sharp.getValue("Flycast/Flycast.slangp").contains("shaders = \"3\""))
         // PlayStation drawn in software: its own lines already
         assertTrue(RetroPack.files(off.copy(compatible = true, sharp = true), p).getValue("SwanStation/SwanStation.slangp").contains("shaders = \"3\""))
@@ -1762,8 +1800,8 @@ class ExtrasTest {
         assertNotNull(RetroPack.files(Look(crt3dSlang = false), p)["Mupen64Plus-Next/Mupen64Plus-Next.glslp"])
         // the GLSL version carries the true picture's figures: GDV's beam, without its glow, boost, mask or vignette,
         // brighter lines wider, gamma out 2.3, and the beam centered on its line
-        for (k in listOf("scanline 10.0", "beam_min 1.5", "beam_max 2.5", "h_sharp 2.5", "thres 0.4", "brightboost 1.0", "glow 0.0",
-            "sat 1.0", "shadowMask -1.0", "vignette 0.0", "gamma_out 2.3")) assertTrue(k, Crt3d.glsl.contains("#define $k\n"))
+        for (k in listOf("scanline 9.0", "beam_min 1.5", "beam_max 2.5", "h_sharp 2.5", "thres 0.4", "brightboost 1.0", "glow 0.0",
+            "sat 1.0", "shadowMask -1.0", "vignette 0.0", "gamma_out 2.6")) assertTrue(k, Crt3d.glsl.contains("#define $k\n"))
         assertTrue(Crt3d.glsl.contains("TEX0.xy * TextureSize - vec2(0.5, OutputSize.y / InputSize.y < 3.0 ? 0.25 : 0.5)") && Crt3d.glsl.contains("if (glow > 0.0) color += glow0"))
         assertTrue(Crt3d.dolphin(0.25, 2, "2.0", 0.0).let { it.contains("SetOutput(") && it.contains("[configuration]") })
     }
@@ -1791,7 +1829,7 @@ class ExtrasTest {
             "shader7 = \"/h/shaders/timeline/crt-gdv-3d.slang\"", "scale_type7 = \"viewport\"", "gdv_hires = \"400.0\"",
             "GAIN_VS_BLUR = \"0.5\"", "SCAN_DIRECTION = \"0.0\"", "warpY = \"0.0\"", "ntsc_rainbow1 = \"1.0\"",
             "glow = \"0.10\"", "brightboost = \"1.10\"", "sat = \"1.00\"", "beam_max = \"2.50\"", "shadowMask = \"1.0\"", "maskDark = \"0.5\"",
-            "maskLight = \"1.5\"", "vignette = \"0.0\"", "gamma_out_red = \"2.3\""))
+            "maskLight = \"1.5\"", "vignette = \"0.0\"", "gamma_out_red = \"2.6\""))
             assertTrue(line, md.contains(line))
         // parameters come after every pass
         assertTrue(md.indexOf("cust_artifacting") > md.indexOf("shader7"))

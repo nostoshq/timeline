@@ -680,7 +680,8 @@ object Runner {
         return modern || ctx.packageManager.checkPermission("android.permission.READ_EXTERNAL_STORAGE", pkg) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun writeRetroSetup(look: Look, p: RetroPack.Paths, pal: List<Pair<String, String>>, arcade: List<String> = emptyList()): Boolean = runCatching {
+    fun writeRetroSetup(look: Look, p: RetroPack.Paths, pal: List<Pair<String, String>>, arcade: List<String> = emptyList(),
+                        handheld: List<Pair<String, String>> = emptyList()): Boolean = runCatching {
         val home = File(p.home)
         val config = File(home, "config")
         config.mkdirs()
@@ -704,7 +705,7 @@ object Runner {
         val gdv = File(p.slang, "crt/shaders/crt-gdv-mini-ultra.slang")
         val made = if (gdv.isFile) runCatching { Crt3d.slang(gdv.readText()) }.getOrNull() else null
         if (made != null) put(File(dir, Crt3d.SLANG), made)
-        val files = RetroPack.files(look.copy(crt3dSlang = made != null), p, pal, arcade)
+        val files = RetroPack.files(look.copy(crt3dSlang = made != null), p, pal, arcade, handheld)
         val listed = File(home, "written.txt")
         val before = if (listed.isFile) listed.readLines().toSet() else emptySet()
         // Only ever a file inside the launcher's own settings folder, whatever the list has come to hold.
@@ -1017,7 +1018,10 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // appear after a restart: looked for again each minute until it is there.
             ChargeCare.used(ctx)
             while (true) {
-                if (!device.bridge) device = withContext(Dispatchers.IO) { Device.probe(ctx) }
+                if (!device.bridge) {
+                    device = withContext(Dispatchers.IO) { Device.probe(ctx) }
+                    if (device.bridge) tvSoon()                        // docked at start-up: the television's rate, now that it can be set
+                }
                 applyCharge()
                 delay(60_000)
             }
@@ -1095,7 +1099,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         lag = prefs.str("ra.lag", if (prefs.bool("ra.runahead", false)) "Run-ahead" else "Preemptive frames").takeIf { it in RetroPack.lagChoices } ?: "Preemptive frames",
         hz = gameHz(),
         tv = tvDisplays().isNotEmpty(),
-        tvLines = tvDisplays().maxOfOrNull { it.mode.physicalHeight } ?: 0,
+        tvLines = tvDisplays().maxOfOrNull { minOf(it.mode.physicalWidth, it.mode.physicalHeight) } ?: 0,   // a set reporting itself upright is still 1080 lines
         panel = panelSize(),
         upright = prefs.str("ra.upright", "Right side down").takeIf { it in RetroPack.uprightChoices } ?: "Right side down",
         speakers = if (prefs.bool("eq.retroarch", false)) Eq.parse(prefs.str("eq.curve")) else null,
@@ -1206,6 +1210,12 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
 
     /** Whether Run lighter can do anything for this game where it opens now: RetroArch with the launcher's setup, or
      *  Dolphin with its folder shared and the disc's ID known. */
+    /**
+     * Run lighter changes something: Nintendo 64 is drawn at four times its detail in either look, the others only in the
+     * sharper one (in the true picture they are at their own resolution already).
+     */
+    fun lighterHelps(g: Game): Boolean = canRunLighter(g) && (g.system == "n64" || prefs.bool("ra.sharp", false))
+
     fun canRunLighter(g: Game): Boolean {
         if (g.system !in RetroPack.canRunLighter) return false
         val emu = emulatorFor(g)
@@ -1781,6 +1791,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         backingUp = true
         restoring = true
         scope.launch {
+            if (emulatorId == "dolphin") collecting?.join()        // the last sitting's place lands before it is set aside
             var short = 0
             var placed = false
             val n = try {
@@ -1807,6 +1818,13 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                         if (SaveSync.putBack(home, card, v, inUse = current.containsKey(rel))) put++ else short++
                     }
                     if (put > 0 && core != null) placed = matchPlace(g, emulatorId, moment, card)
+                    // GameCube and Wii: the place Dolphin would load is newer than the save put back (and holds the memory
+                    // card as it was then), so it is set aside, as the confirmation promised. One still waiting in Dolphin's
+                    // folder is taken in first, so it is set aside too rather than loaded.
+                    if (put > 0 && emulatorId == "dolphin") {
+                        if (prefs.str("dolphin.pending") == g.key && DolphinResume.collect(ctx, g.key) in setOf("ok", "none")) prefs.put("dolphin.pending", "")
+                        DolphinResume.setAside(ctx, g.key)
+                    }
                     SaveSync.backUp(home, card, owns)
                     put
                 }
@@ -1895,7 +1913,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             prefs.put("ra.cheevosPass", ""); prefs.put("ra.cheevosSigned", user)
         }
         val look = look()
-        val ok = Runner.writeRetroSetup(look, p, palGames(), cardLibrary["arcade"]?.map { it.stem } ?: emptyList())
+        val handheld = listOf("gb", "gbc").flatMap { s -> cardLibrary[s].orEmpty().map { s to it.stem } }
+        val ok = Runner.writeRetroSetup(look, p, palGames(), cardLibrary["arcade"]?.map { it.stem } ?: emptyList(), handheld)
         if (ok && look.achievements?.fresh == true) prefs.put("ra.cheevosFresh", false)    // handed over; RetroArch signs in with it next
         return ok
     }
@@ -2109,6 +2128,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
      * the games on the device's own screen keep its rate.
      */
     fun gameHz(): Int = if (tvDisplays().isNotEmpty()) 60 else Math.round(refreshRate).coerceAtLeast(60)   // 119.88 is 120
+    /** A television is connected and on. */
+    fun docked(): Boolean = tvDisplays().isNotEmpty()
 
     // ---- a television ----------------------------------------------------------------------------
 
@@ -2209,11 +2230,24 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
      * comes or goes. A game's start then finds them in place and has only to read them; it allows itself four seconds,
      * which the first write after an update, with Dolphin itself still starting, did not always fit into.
      */
+    /**
+     * Only while the launcher is in front with nothing starting. A controller that connects mid-game (docking re-adds a
+     * controller) is written for on the way back: reading Dolphin's folder starts Dolphin's process, which must not wake
+     * beside a game, nor rewrite Dolphin's files while it reads them.
+     */
+    private var dolphinPending = false
     private fun writeDolphinSoon() {
         dolphinSoonJob?.cancel()
-        dolphinSoonJob = scope.launch { delay(2000); withContext(Dispatchers.IO) { runCatching {
-            if (dolphinGranted()) { val up = Proc.running(ctx, DolphinPack.PACKAGE); writeDolphin(); lullDolphin(up) }
-        } } }
+        if (!inFront || starting) { dolphinPending = true; return }
+        dolphinPending = false
+        dolphinSoonJob = scope.launch {
+            delay(2000)
+            collecting?.join()                                 // not while the last GameCube or Wii sitting is being put away
+            if (!inFront || starting) { dolphinPending = true; return@launch }
+            withContext(Dispatchers.IO) { runCatching {
+                if (dolphinGranted()) { val up = Proc.running(ctx, DolphinPack.PACKAGE); writeDolphin(); lullDolphin(up) }
+            } }
+        }
     }
 
     /**
@@ -2230,7 +2264,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // One command for the service, so a script; the whole record is too long to come back through it.
             val file = File(ctx.filesDir, "frames.sh")
             val dump = if (Scripts.write(file, Stutter.READ)) Bridge.read("timeout 9 sh ${file.absolutePath}") else null
-            if (g == null || (g.pal && inside.isEmpty())) return@launch
+            // 50 Hz games, and the arcade boards that ran at 54 to 55 Hz, fall unevenly on this panel's refreshes by nature.
+            if (g == null || g.pal || (g.system == "arcade" && g.stem.lowercase() in RetroPack.offPaceSets)) return@launch
             val s = dump?.let { Stutter.of(Stutter.histogram(it), hz, drawnOnly) } ?: return@launch
             prefs.put("stutter:$key", Stutter.format(s, System.currentTimeMillis()))
             withContext(Dispatchers.Main) { settingsTick++ }
@@ -2253,6 +2288,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         tidyJob = scope.launch {
             delay(DOLPHIN_CLOSE_MS + 1500)
             collecting?.join()
+            dolphinSoonJob?.join()                             // never while Dolphin's files are being written through it
             if (starting || !inFront || seq != startSeq || !(device.bridge || Bridge.present)) return@launch
             val closed = withContext(Dispatchers.IO) {
                 emulatorPackages().filter { emulatorOf(it) == "dolphin" }.mapNotNull { pkg ->
@@ -2539,7 +2575,9 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
 
     /** The reset in Settings: closes every emulator left in the background, after a second press if a game is open in one. */
     fun closeBackground() {
-        val open = (listOfNotNull(stillOpen.takeIf { it.isNotEmpty() }) + heldOpen.values.map { it.key }).distinct().mapNotNull(::find)
+        // hakuX and ARMSX2 are never closed from here, so a game in one is not named as about to be.
+        val held = heldOpen.filterKeys { emulatorOf(it) !in Memory.NEVER_FORCE }.values.map { it.key }
+        val open = (listOfNotNull(stillOpen.takeIf { it.isNotEmpty() }) + held).distinct().mapNotNull(::find)
         val now = SystemClock.uptimeMillis()
         if (open.isNotEmpty() && now - closeAskedAt > 6_000) {
             closeAskedAt = now
@@ -2548,6 +2586,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         }
         closeAskedAt = 0L
         scope.launch {
+            collecting?.join()                                 // a GameCube or Wii game still being put away is let finish first
+            dolphinSoonJob?.join()                             // and Dolphin's files being written
             val closed = withContext(Dispatchers.IO) {
                 emulatorPackages().filter { pkg -> emulatorOf(pkg) !in Memory.NEVER_FORCE && !Runner.stopped(ctx, pkg) && Vendor.forceStop(pkg)?.let(Bridge::run) == true }
             }
@@ -2937,7 +2977,14 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         val returning = !retro && heldOpen[plan.pkg]?.key == g.key
         val skip = skipOnce
         skipOnce = null
-        val big = !second && !knowing && !testStartOf(g.key) && !returning
+        // What RetroArch last held is remembered on its own, since a game in another emulator may have been played in between.
+        val holds = g.key + "\n" + emulatorId
+        val other = retro && prefs.str("ra.last") != holds
+        // A game that is already open and is only being returned to: nothing new is started. (A return to RetroArch's open
+        // game is no start either: asking about another emulator there dropped "Keep my place, then play", the question
+        // naming the game being closed instead of the one wanted. The wanted game's own start asks.)
+        val back = !second && (if (retro) !other && stillOpen == g.key else heldOpen[plan.pkg]?.key == g.key)
+        val big = !second && !knowing && !testStartOf(g.key) && !returning && !back
         val heldNow = heldOpen.mapValues { it.value.key }
         val leftAt = leftDolphinAt
         val seq = ++startSeq
@@ -2966,12 +3013,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         // app's process (tried on Android 13 and 15: the request is refused), so RetroArch is simply handed the new game.
         // If it was holding another, or the same one under another core, it closes itself and the launcher lands back in
         // front; returned() then starts the game once more, into a RetroArch that is no longer there, and that start is
-        // clean. What RetroArch last held is remembered on its own, since a game in another emulator may have been played
-        // in between.
-        val holds = g.key + "\n" + emulatorId
-        val other = retro && prefs.str("ra.last") != holds
-        // A game that is already open and is only being returned to: nothing new is started.
-        val back = !second && (if (retro) !other && stillOpen == g.key else heldOpen[plan.pkg]?.key == g.key)
+        // clean. (holds, other and back are worked out above.)
         val suspect = if (retro) prefs.str("ra.maybe") else ""
         starting = true
         if (!second) Feel.started()
@@ -2981,7 +3023,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                 val (step, gone) = withContext(Dispatchers.IO) { survey(plan.pkg, emulatorId, heldNow, leftAt, skip) }
                 note.cancel()
                 // The player left, or started something else, while this was being looked at: this start is dropped.
-                if (seq != startSeq || !inFront) { if (seq == startSeq) starting = false; return@launch }
+                if (seq != startSeq || !inFront) { if (seq == startSeq) { starting = false; again = null }; return@launch }
                 if (gone.isNotEmpty()) setHeld(heldOpen - gone.toSet())
                 when (step) {
                     is Memory.Step.Ask -> {
@@ -2995,7 +3037,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                     }
                     is Memory.Step.Close -> {
                         // Not before the last GameCube or Wii sitting has been put away: that is read through Dolphin itself.
-                        if (step.pkgs.any { emulatorOf(it) == "dolphin" }) collecting?.join()
+                        if (step.pkgs.any { emulatorOf(it) == "dolphin" }) { collecting?.join(); dolphinSoonJob?.join() }
                         withContext(Dispatchers.IO) { step.pkgs.forEach { Vendor.forceStop(it)?.let(Bridge::run) } }
                         forgetOpenIn(step.pkgs)
                     }
@@ -3040,7 +3082,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             if (emulatorId == "dolphin" && root && endsOnLeave(plan.pkg) && !back) {
                 collecting?.join()
                 // The player left, or started something else, while the last sitting was being put away: dropped.
-                if (seq != startSeq || !inFront) { if (seq == startSeq) starting = false; return@launch }
+                if (seq != startSeq || !inFront) { if (seq == startSeq) { starting = false; again = null }; return@launch }
                 withContext(Dispatchers.IO) { prepareDolphin(g) }
             }
             // PlayStation 2's television look, kept in ARMSX2's own folder; and its autosave set to the place-keeping
@@ -3058,6 +3100,9 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                 dolphinWritten = withTimeoutOrNull(4000) { w.await() } == true
                 if (!dolphinWritten) stop.set(true)
             }
+            // The player left (Home, sleep) or chose something else while this start was being made ready, which can take
+            // seconds: it is dropped rather than open a game nobody is waiting for.
+            if (seq != startSeq || !inFront) { if (seq == startSeq) { starting = false; again = null }; return@launch }
             if (!second) {
                 undo = Undo(g.key, plays[g.key], recent)
                 prefs.put("playing.undo", g.key + "\n" + (plays[g.key]?.let { "${it.count}\t${it.last}\t${it.seconds}" } ?: "none"))
@@ -3150,9 +3195,12 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         val gone = held.keys.filter { Proc.gone(ctx, it) || Proc.leftover(ctx, it) }
         val others = emulatorPackages().filter { it != target && it != skip && !it.startsWith("com.retroarch") }.mapNotNull { pkg ->
             val id = emulatorOf(pkg)?.takeIf { it in Memory.BIG } ?: return@mapNotNull null
-            val up = Proc.running(ctx, pkg)?.takeUnless { it && Proc.leftover(ctx, pkg) }
-            var idle = false
-            if (up == true && id == "dolphin" && endsOnLeave(pkg)) {
+            val up = Proc.running(ctx, pkg)
+            // No window: a leftover process, holding no game. Idle, so it is closed quietly like any idle emulator (never
+            // hakuX or ARMSX2, which decide() leaves be) instead of being asked about. Dolphin is read from its own thread
+            // either way, so one still ending a game is never taken for idle.
+            var idle = up == true && id != "dolphin" && Proc.leftover(ctx, pkg)
+            if (up == true && id == "dolphin" && (endsOnLeave(pkg) || Proc.leftover(ctx, pkg))) {
                 val wait = DOLPHIN_CLOSE_MS - (SystemClock.uptimeMillis() - leftAt)
                 if (leftAt > 0 && wait > 0) Thread.sleep(wait)
                 idle = DolphinWatch.state(ctx, pkg) in setOf("none", "idle", "frozen")
@@ -3172,6 +3220,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         holding = null
         after = null
         scope.launch {
+            if (emulatorOf(h.pkg) == "dolphin") { collecting?.join(); dolphinSoonJob?.join() }    // Dolphin finishes putting its last game away first
             // Never for hakuX or ARMSX2 (the page does not offer them), and only counted done once Android says the app is stopped.
             val ok = h.canClose && device.bridge && withContext(Dispatchers.IO) {
                 Vendor.forceStop(h.pkg)?.let(Bridge::run) == true && run { Thread.sleep(400); Runner.stopped(ctx, h.pkg) }
@@ -3404,7 +3453,15 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         var keepTemp = false
         if (pending.isNotEmpty()) when (DolphinResume.collect(ctx, pending)) {
             "ok", "none", "link" -> prefs.put("dolphin.pending", "")
-            else -> keepTemp = pending == g.key && find(pending)?.discs.orEmpty().size <= 1   // could not be moved: left where Dolphin loads it
+            else -> {
+                keepTemp = pending == g.key && find(pending)?.discs.orEmpty().size <= 1   // could not be moved: left where Dolphin loads it
+                // Another game's place that could not be taken in (no room, say) is renamed beside it, not cleared away
+                // under this game; the next start of that game finds it gone and starts fresh, the place still on the device.
+                if (!keepTemp && pending != g.key && DolphinResume.keepAside(ctx, pending)) {
+                    prefs.put("dolphin.pending", "")
+                    DolphinResume.setAside(ctx, pending)       // nor an older place of that game loaded in its stead
+                }
+            }
         }
         val fresh = prefs.str("dolphin.fresh") == g.key
         if (fresh) prefs.put("dolphin.fresh", "")
@@ -3525,6 +3582,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         inFront = true
         cameByHome = viaHome
         forgetStopped()
+        if (dolphinPending) writeDolphinSoon()                 // a controller came or went during the game
         again?.let { a ->
             // Gone behind RetroArch and back in front within moments of starting a game: RetroArch was still holding
             // another one and closed itself. It is gone now, so the same game starts properly this time. Coming to the

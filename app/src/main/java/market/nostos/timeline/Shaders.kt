@@ -129,7 +129,7 @@ void main()
    gdv_hires added (lines are averaged only above a chosen picture height). November 2026: the beam centered on each
    line, the glow skipped when off, and defaults set to show the picture as a television did.
 */
-#pragma parameter scanline "Scanline Adjust" 10.0 1.0 15.0 1.0
+#pragma parameter scanline "Scanline Adjust" 9.0 1.0 15.0 1.0
 #pragma parameter beam_min "Scanline Dark" 1.5 0.5 3.0 0.05
 #pragma parameter beam_max "Scanline Bright" 2.5 0.5 3.0 0.05
 #pragma parameter h_sharp "Horizontal Sharpness" 2.5 1.0 5.0 0.05
@@ -140,7 +140,7 @@ void main()
 #pragma parameter maskLight "Lottes maskLight" 1.5 0.0 2.0 0.1
 #pragma parameter CGWG "CGWG Mask Str." 1.0 0.0 1.0 0.1
 #pragma parameter vignette "Vignette On/Off" 0.0 0.0 1.0 1.0
-#pragma parameter gamma_out "Gamma out" 2.3 1.0 4.0 0.1
+#pragma parameter gamma_out "Gamma out" 2.6 1.0 4.0 0.1
 #pragma parameter brightboost "Bright boost" 1.0 0.5 2.0 0.05
 #pragma parameter sat "Saturation adjustment" 1.0 0.0 2.0 0.05
 #pragma parameter glow "Glow Strength" 0.0 0.0 1.0 0.01
@@ -188,7 +188,7 @@ COMPAT_VARYING vec4 TEX0;
 uniform float scanline, beam_min, beam_max, h_sharp, shadowMask, thres, masksize, maskDark, maskLight, CGWG, vignette,
     gamma_out, brightboost, sat, glow, gdv_hires;
 #else
-#define scanline 10.0
+#define scanline 9.0
 #define beam_min 1.5
 #define beam_max 2.5
 #define h_sharp 2.5
@@ -199,7 +199,7 @@ uniform float scanline, beam_min, beam_max, h_sharp, shadowMask, thres, masksize
 #define maskLight 1.5
 #define CGWG 1.0
 #define vignette 0.0
-#define gamma_out 2.3
+#define gamma_out 2.6
 #define brightboost 1.0
 #define sat 1.0
 #define glow 0.0

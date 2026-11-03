@@ -151,7 +151,7 @@ fun TimelineScreen() {
     Frame(
         header = { Crumbs("Timeline") },
         hints = listOf("A" to "Open", "Y" to "Search", "X" to "Surprise me", "R1" to "Shelves", "START" to "Settings"),
-        footer = "${app.total} games",
+        footer = if (app.total == 1) "1 game" else "${app.total} games",
    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(72.u())) {
             FocusList(systems.size, cursor, rowHeight = 52, rows = 9, modifier = Modifier.width(300.u())) { i, on ->
@@ -219,8 +219,9 @@ private fun Poster(cursor: Cursor, systems: List<SystemDef>, onOpen: () -> Unit,
             }
             Gap(h = 24)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.u())) {
-                T((app.library[s.id]?.size ?: 0).toString(), 40, weight = FontWeight.Bold, tracking = -1)
-                Label("games", Modifier.padding(bottom = 7.u()))
+                val count = app.library[s.id]?.size ?: 0
+                T(count.toString(), 40, weight = FontWeight.Bold, tracking = -1)
+                Label(if (count == 1) "game" else "games", Modifier.padding(bottom = 7.u()))
                 Gap(w = 14)
                 Label(s.year.toString(), Modifier.padding(bottom = 7.u()))
                 Gap(w = 14)
@@ -363,7 +364,7 @@ fun GamesScreen(screen: Screen.Games) {
     val sorted = if (bySystem && app.sortMode != "Title") "  ·  by ${app.sortMode.lowercase()}" else ""
     Frame(
         header = { Crumbs(parent, title) },
-        headerRight = { Label("${games.size} games$sorted") },
+        headerRight = { Label((if (games.size == 1) "1 game" else "${games.size} games") + sorted) },
         hints = emptyList(),
         hintsSlot = {
             val favorite = now().key in app.favorites
@@ -506,7 +507,7 @@ fun DetailScreen(screen: Screen.Detail) {
     val more = (lines.first - lines.second).coerceAtLeast(0)
     // The last measured sitting stuttered (Stutter): Run lighter is offered on X, until it is on.
     val stutter = remember(g.key, tick) { app.stutterOf(g)?.takeIf { it > Stutter.FLAG } }
-    val offerLighter = stutter != null && remember(g.key, tick) { app.canRunLighter(g) && !app.runsLighter(g) }
+    val offerLighter = stutter != null && remember(g.key, tick) { app.lighterHelps(g) && !app.runsLighter(g) }
     // RetroArch is always handed the whole set and changes discs from its own menu; a standalone emulator is handed one disc.
     val pickDisc = g.discs.size > 1 && !emulatorId.startsWith("ra:")
     fun play() = app.play(g, if (pickDisc) g.discs.getOrNull(disc) else null)
@@ -542,7 +543,7 @@ fun DetailScreen(screen: Screen.Detail) {
     // The place in the list only: while discs are being chosen, the lit disc button says which one.
     val place = if (at >= 0 && list.size > 1) "${at + 1} / ${list.size}" else ""
     Frame(
-        header = { Crumbs(*(app.browseFrom + (if (g.title.length > 34) g.title.take(33).trimEnd() + "…" else g.title)).toTypedArray()) },
+        header = { Crumbs(*(app.browseFrom + shortTitle(g.title)).toTypedArray()) },
         hints = hints,
         footer = place,
    ) {
@@ -582,11 +583,11 @@ fun DetailScreen(screen: Screen.Detail) {
                     m?.developer?.takeIf { it.isNotEmpty() }?.let { add("Developer" to it) }
                     m?.publisher?.takeIf { it.isNotEmpty() }?.let { add("Publisher" to it) }
                     m?.players?.takeIf { it.isNotEmpty() }?.let { add("Players" to it) }
-                    m?.rating?.takeIf { it >= 0f }?.let { add("Rating" to "${(it * 10).toInt() / 1f} / 10".replace(".0 ", " ")) }
+                    m?.rating?.takeIf { it >= 0f }?.let { add("Rating" to "${Math.round(it * 100) / 10f} / 10".replace(".0 ", " ")) }
                     if (g.region.isNotEmpty()) add("Region" to g.region)
                     if (g.fanTranslation) add("Text" to "Fan translation")
                     if (g.pal) add("Speed" to "50 Hz release")
-                    if (g.system == "arcade" && g.stem.lowercase() in RetroPack.uprightSets && app.retroManaged)
+                    if (g.system == "arcade" && g.stem.lowercase() in RetroPack.uprightSets && app.retroManaged && !app.docked())
                         app.look().upright.takeIf { it != "Keep it level" }?.let { add("Hold it" to it) }
                     val file = listOf(if (g.discs.size > 1) "${g.discs.size} × $format" else format, Sizes.bytes(info.bytes)).filter { it.isNotEmpty() }
                     if (file.isNotEmpty()) add("On the card" to file.joinToString("  ·  "))
@@ -646,7 +647,10 @@ fun DetailScreen(screen: Screen.Detail) {
                 val controls = remember(g.key, emulatorId, tick) {
                     val taught = app.prefs.int("m1.code", 0) > 0 || app.prefs.int("m2.code", 0) > 0
                     ControlsNote.of(g.system, g.base, emulatorId, app.look().dolphinPad,
-                        if (taught && app.retroManaged) app.look().extras[g.system] ?: Hotkeys.usual(g.system) else null)
+                        if (taught && app.retroManaged) app.look().extras[g.system] ?: Hotkeys.usual(g.system) else null,
+                        // Dolphin's place is taken in through the maker's service (settleDolphin): without it, Home keeps nothing.
+                        // and a GameCube game on more than one disc always starts fresh.
+                        app.prefs.bool("ra.resume", true) && (emulatorId != "dolphin" || (Bridge.present && g.discs.size <= 1)))
                 }
                 if (controls.isNotEmpty()) {
                     Gap(h = 14)
@@ -790,6 +794,9 @@ fun ShelfListScreen() {
 
 // ------------------------------------------------------------------------------------- Menus
 
+/** A title cut to fit a page's crumbs: 34 characters at most. */
+fun shortTitle(t: String): String = if (t.length > 34) t.take(33).trimEnd() + "…" else t
+
 class Item(
     val label: String,
     val value: String = "",
@@ -841,7 +848,7 @@ private fun menu(app: AppState, id: String): MenuDef = when {
         if (g == null) MenuDef(listOf("Options"), emptyList()) else {
             val plan = Runner.plan(app.ctx, app.emulatorFor(g), g.path)
             val on = app.userShelves.count { g.key in it.keys }
-            MenuDef(listOf(g.title.take(36), "Options"), listOf(
+            MenuDef(listOf(shortTitle(g.title), "Options"), listOf(
                 Item("Favorite", if (g.key in app.favorites) "Yes" else "No",
                     "Favorites get a shelf of their own at the top of Shelves.", onStep = { app.toggleFavorite(g) }),
                 Item("Finished", if (g.key in app.finished) "Yes" else "No",
@@ -855,7 +862,7 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 Item("Saves", app.saveIndex.firstOrNull { it.first == g.key }?.second?.let { Saves.day(it, System.currentTimeMillis()) } ?: "",
                     "This game's own save, the place you left off, earlier versions and the copy on the card.",
                     onA = { app.lookAtSaves(g); app.push(Screen.Menu("saves:" + g.key)) }),
-                *(if (app.canRunLighter(g)) arrayOf(Item("Run lighter", if (app.runsLighter(g)) "Yes" else "No",
+                *(if (app.lighterHelps(g) || (app.canRunLighter(g) && app.runsLighter(g))) arrayOf(Item("Run lighter", if (app.runsLighter(g)) "Yes" else "No",
                     "Draws this one game at its console's own resolution instead of the sharper picture, for a game that stutters. Off brings the sharp picture back. Either way it applies from the game's next fresh start.",
                     onStep = { app.toggleLighter(g) })) else emptyArray()),
                 *(if (g.system in setOf("gc", "wii") && app.canRunLighter(g) && !app.look().dolphinGl) arrayOf(Item("Drawn with",
@@ -895,7 +902,7 @@ private fun menu(app: AppState, id: String): MenuDef = when {
         // again after anything on it is used); until the first answer is in, the page says it is looking.
         val s = g?.let { app.saveDetails[it.key] }
         if (g == null) MenuDef(listOf("Saves"), emptyList())
-        else if (s == null) MenuDef(listOf(g.title.take(36), "Saves"), listOf(Item("Looking at its saves", "", "")), hints = listOf("B" to "Back"))
+        else if (s == null) MenuDef(listOf(shortTitle(g.title), "Saves"), listOf(Item("Looking at its saves", "", "")), hints = listOf("B" to "Back"))
         else {
             val now = System.currentTimeMillis()
             fun day(ms: Long) = Saves.day(ms, now)
@@ -908,14 +915,17 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                         (if (own.isEmpty()) "Made when you save inside the game, as its cartridge or memory card did."
                         else "What the game itself saved, as its cartridge or memory card did (${Sizes.bytes(own.sumOf { it.size })}). It reaches storage within seconds of saving.") + clock)
                     rows += Item("Where you left off", s.place?.let { day(it.modified) } ?: "Nothing kept",
-                        if (s.place == null) "Leave a game with START and SELECT and your exact place is kept. Starting it again picks up there."
-                        else "Your exact place from when you left with START and SELECT. Starting the game picks up there.")
+                        if (s.place == null) (if (app.prefs.bool("ra.resume", true)) "Leave a game with START and SELECT and your exact place is kept. Starting it again picks up there."
+                            else "Keep your place when you leave is off (Settings, Saves), so leaving keeps nothing here.")
+                        else if (app.prefs.bool("ra.resume", true)) "Your exact place from when you left with START and SELECT. Starting the game picks up there."
+                        else "Your exact place from when you last left with START and SELECT. Keep your place when you leave is off (Settings, Saves), so the game starts at its title screen.")
                     if (s.place != null) rows += Item("Start from the game's own save instead", "",
                         "Sets your place aside, so the game next opens at its title screen and loads its own save. The place is kept, and can be taken back from this page.",
                         onA = { app.startFromOwnSave(g) })
                     s.aside?.let { aside ->
                         rows += Item("Go back to the place set aside", day(aside.modified),
-                            "A place from an earlier sitting, set aside by you or because the game's own save was newer. Press A and the game next picks up there.",
+                            "A place from an earlier sitting, set aside by you or because the game's own save was newer. Press A and the game next picks up there" +
+                                (if (app.prefs.bool("ra.resume", true)) "." else ", once Keep your place when you leave is on again (Settings, Saves)."),
                             onA = { app.useAsidePlace(g) })
                     }
                     if (s.slots > 0) rows += Item("Save states made in RetroArch's menu", s.slots.toString(),
@@ -928,8 +938,10 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 else -> {
                     val label = Runner.plan(app.ctx, app.emulatorFor(g), g.path)?.emulator ?: "its emulator"
                     rows += Item("Kept inside $label", "", when (app.emulatorFor(g)) {
-                        "armsx2" -> "PlayStation 2 memory cards live in ARMSX2's own storage, where no other app can read them. ARMSX2 backs a card up itself each time a game starts. For a copy on the card, see Settings, Saves."
-                        "hakux" -> "Xbox saves live on the console's hard disk, which hakuX keeps in its own storage. No other app can read it, so there is no copy on the card."
+                        "armsx2" -> if (app.device.bridge) "PlayStation 2 memory cards live in ARMSX2's own storage. The launcher copies them to the card, under _timeline/saves, after you leave ARMSX2, while it is closed. Putting one back is done by hand."
+                            else "PlayStation 2 memory cards live in ARMSX2's own storage, where no other app can read them. ARMSX2 backs a card up itself each time a game starts."
+                        "hakux" -> if (app.device.bridge) "Xbox saves live on the console's hard disk, which hakuX keeps in its own storage. The launcher copies the disk to the card, under _timeline/saves, while hakuX is closed and the card has room. Putting it back is done by hand."
+                            else "Xbox saves live on the console's hard disk, which hakuX keeps in its own storage. No other app can read it, so there is no copy on the card."
                         else -> "This emulator keeps its saves in its own storage, where the launcher cannot read them."
                     })
                 }
@@ -947,16 +959,18 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                     "Press A to put this one back. The save in use now is kept first, so it can be undone.", onA = { app.push(Screen.Menu("saveback:$m:${g.key}")) })
                 }
             }
-            MenuDef(listOf(g.title.take(36), "Saves"), rows, hints = listOf("A" to "Select", "B" to "Back"))
+            MenuDef(listOf(shortTitle(g.title), "Saves"), rows, hints = listOf("A" to "Select", "B" to "Back"))
         }
     }
     id.startsWith("saveback:") -> {
         val rest = id.removePrefix("saveback:")
         val moment = rest.substringBefore(':').toLongOrNull() ?: 0L
         val g = app.find(rest.substringAfter(':'))
-        if (g == null) MenuDef(listOf("Saves"), emptyList()) else MenuDef(listOf(g.title.take(36), "Saves", "Put back"), listOf(
+        if (g == null) MenuDef(listOf("Saves"), emptyList()) else MenuDef(listOf(shortTitle(g.title), "Saves", "Put back"), listOf(
             Item("Put back the save from ${Saves.day(moment, System.currentTimeMillis())}", "",
-                "The save in use now is kept as an earlier version first. The place you left off is set aside, so the game starts from this save. Both can be taken back from the page before this one.",
+                if (app.emulatorFor(g) == "dolphin") "The save in use now is kept as an earlier version first, and can be taken back from the page before this one. " +
+                    "Where you left off is set aside, so the game starts from this save."
+                else "The save in use now is kept as an earlier version first. The place you left off is set aside, so the game starts from this save. Both can be taken back from the page before this one.",
                 onA = { app.pop(); app.putBackSave(g, moment) }),
             Item("Leave it as it is", "", "Nothing changes.", onA = { app.pop() }),
        ), hints = listOf("A" to "Select", "B" to "Back"), focus = 1)
@@ -982,8 +996,9 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 "Where you left off in each game, and save states made in RetroArch's menu. They are far larger, so two earlier versions of each are kept." +
                     if (app.prefs.bool("saves.room", true)) "" else " The card has under 1 GB free, so these are waiting; the games' own saves are still copied."),
             app.toggle("Keep your place when you leave", "ra.resume", true,
-                "Leaving a game with START and SELECT keeps your exact place; GameCube and Wii keep it when left with Home. Starting it again picks up there. " +
-                    "Closing a GameCube or Wii game from Dolphin's own menu starts it fresh next time; games on more than one disc always start fresh. " +
+                "Leaving a game with START and SELECT keeps your exact place" + (if (Bridge.present) "; GameCube and Wii keep it when left with Home. " else ". ") +
+                    "Starting it again picks up there. " +
+                    (if (Bridge.present) "Closing a GameCube or Wii game from Dolphin's own menu starts it fresh next time; GameCube games on more than one disc always start fresh. " else "") +
                     "PlayStation 2 saves where you are every five minutes " +
                     "and when you close a game from its menu, and picks up there."),
             Item("Write the game's own save every", app.prefs.int("ra.sram", 10).let { if (it == 0) "Only on exit" else "$it seconds" },
@@ -1016,7 +1031,7 @@ private fun menu(app: AppState, id: String): MenuDef = when {
     id.startsWith("shelve:") -> {
         val g = app.find(id.removePrefix("shelve:"))
         if (g == null) MenuDef(listOf("Shelves"), emptyList()) else MenuDef(
-            listOf(g.title.take(36), "Add to a shelf"),
+            listOf(shortTitle(g.title), "Add to a shelf"),
             listOf(Item("New shelf", "", "Name a shelf and put this game on it.", onA = {
                 app.draft = ""
                 app.naming = { name -> app.createShelf(name, g)?.let { app.say("Added to $it.") } }
@@ -1181,21 +1196,26 @@ private fun menu(app: AppState, id: String): MenuDef = when {
     id == "picture" -> {
         val pkg = listOf("com.retroarch.aarch64", "com.retroarch", "com.retroarch.ra32").firstOrNull { Runner.installed(app.ctx, it) }
         val paths = pkg?.let { Runner.retroPaths(app.ctx, it) }
-        val fast = app.refreshRate >= 119f
+        // What games run at now: 120 on the panel, 60 on a television (the beam needs 120 frames a second).
+        val fast = app.gameHz() >= 119
+        val docked = app.docked()
+        val skipped = if (fast) "" else if (docked) "Needs 120 Hz; a television runs at 60, so it is skipped while docked. "
+            else "Needs a 120 Hz panel; this one is at ${app.refreshRate.toInt()}, so it is skipped. "
         MenuDef(settings("Picture"), listOf(
             app.toggle("Set up RetroArch for me", "ra.managed", true,
                 "The launcher writes scaling, shaders, motion and saving for every RetroArch system and starts RetroArch with them. " +
                     "Off leaves RetroArch exactly as you set it yourself."),
             app.choice("Television consoles: screen", "ra.crt", RetroPack.crtChoices,
                 "The CRT look for NES, SNES, Genesis, TurboGrafx, Atari and arcade. GDV Mini Ultra is the default. All five are light."),
-            Item("Signal", "", "How each console reached the television: composite, S-video or RGB, in front of the CRT. Set to what most American homes had.",
+            Item("Signal", "", "How each console reached the screen, in front of the CRT: RF, composite, S-video, RGB, VGA or component. " +
+                "Set to what most American homes had up to the Saturn, the best cable each console had from the Nintendo 64 on, and an arcade monitor's RGB.",
                 onA = { app.push(Screen.Menu("signal")) }),
             app.choice("Television consoles: motion", "ra.motion", RetroPack.motionChoices,
-                (if (fast) "" else "Needs a 120 Hz panel; this one is at ${app.refreshRate.toInt()}, so it is skipped. ") +
+                skipped +
                     "Beam simulator lights each frame for half the time, as a tube's phosphors did. " +
                     "Black frames is the plain version. Both are dimmer, and 50 Hz games skip them."),
             app.choice("3D consoles: motion", "ra.motion3d", RetroPack.motionChoices,
-                (if (fast) "" else "Needs a 120 Hz panel; this one is at ${app.refreshRate.toInt()}, so it is skipped. ") +
+                skipped +
                     "The beam for PlayStation and Saturn; Nintendo 64 gets black frames, since it draws in a " +
                     "way the beam cannot follow. Games that run at 30 or 20 frames a second show a faint double image in " +
                     "motion, as they did on a tube. 50 Hz games skip it. Dreamcast goes without, so its monitor keeps its full light."),
@@ -1208,13 +1228,15 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                     "This draws them that way, with a faint shadow under the picture. As the console draws it already."),
             app.choice("Upright arcade games", "ra.upright", RetroPack.uprightChoices,
                 "Pac-Man, Galaga, 1943, DoDonPachi and the other games made for a screen stood on end fill the panel when you turn the device. " +
-                    "The picture, both sticks, the d-pad and the face buttons all turn with it, for those games only. If it comes up upside down, pick the other side."),
+                    "The picture, both sticks, the d-pad and the face buttons all turn with it, for those games only. If it comes up upside down, pick the other side. " +
+                    "On a television they stand upright in the middle of the screen."),
             app.toggle("Whole-number scaling", "ra.integer", true,
                 "Every game pixel becomes the same number of screen pixels. 240-line consoles fill this panel exactly at four times."),
             app.toggle("3D consoles: sharper than the console", "ra.sharp", false,
-                "Off is the true picture: PlayStation and Dreamcast at their own resolution, PlayStation with its dithering and wobble, and 480-line " +
-                    "pictures without gaps between their lines, as a television showed them. On draws PlayStation and Dreamcast at 960 lines with " +
-                    "clean edges and no wobble, keeps Nintendo 64's extra detail across, and draws lines on 480-line pictures, like a monitor."),
+                "Off is the true picture: PlayStation and Dreamcast at their own resolution, PlayStation with its dithering and wobble. " +
+                    "On draws PlayStation and Dreamcast at 960 lines with clean edges and no wobble, GameCube and Wii at twice their " +
+                    "detail, and keeps Nintendo 64's extra detail across. Either way, 480-line pictures sent to a television show without gaps " +
+                    "between their lines, as the set blended them; the Dreamcast's VGA box keeps its lines, like a monitor."),
             app.toggle("3D consoles: CRT look", "ra.crt3d", true,
                 "PlayStation, Saturn, Nintendo 64, Dreamcast, GameCube and Wii through the same CRT as the television consoles, with scanlines at each " +
                     "console's own number of lines and the extra detail kept in them. Off draws them clean."),
@@ -1406,9 +1428,11 @@ private fun menu(app: AppState, id: String): MenuDef = when {
         // The open game is named once, in the header, so each answer has room for the game wanted
         // ("Keep my place in X, then play Y" was cut for about two pairs in five).
         val shown = open.ifEmpty { if (h?.memory == true) emu else "" }
-        val heading = if (shown.length > 34) shown.take(33).trimEnd() + "…" else shown
+        val heading = shortTitle(shown)
         MenuDef(listOfNotNull("Still open", heading.takeIf { it.isNotEmpty() }), if (h == null) emptyList() else if (h.pkg.startsWith("com.retroarch")) listOf(
-            Item("Keep my place, then play $wanted", "", "$open comes back as you left it. Press START and SELECT there: your place is kept, and $wanted starts by itself.",
+            Item("Keep my place, then play $wanted", "", "$open comes back as you left it. Press START and SELECT there" +
+                (if (h.open.isNotEmpty() && RetroPack.savesOnAllFour(h.open.substringBefore('/'), Titles.base(h.open.substringAfter('/')))) " twice" else "") +
+                ": your place is kept, and $wanted starts by itself.",
                 onA = { app.closeThenPlay() }),
             Item("Play $wanted now", "", "$open closes without keeping your place in it. Whatever was saved inside the game itself is safe.",
                 onA = { app.playAnyway() }),
@@ -1418,14 +1442,15 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 "Save there if you want to, close it$how, and $wanted starts by itself.", onA = { app.closeThenPlay() }),
             if (h.canClose && app.device.bridge) Item("Close it without saving", "", "$emu is closed as it is and $wanted starts. Whatever was saved inside $open is safe; " +
                 "anything since is lost.", onA = { app.closeHeldAndPlay() }) else null,
-            Item("Play $wanted anyway", "", "$emu is left as it is. With two big emulators in memory the Nova can stall.", onA = { app.playAnyway() }),
+            Item("Play $wanted anyway", "", "$emu is left as it is. With two big emulators in memory the device can stall.", onA = { app.playAnyway() }),
             Item("Go back to $open", "", "It is where you left it.", onA = { app.backToHeld() }),
             Item("It is closed already", "", "For when $open was closed some other way. Starts $wanted now.", onA = { app.heldIsClosed() }),
        ) else if (h.memory) listOfNotNull(
+            // The game in it is not known, so the first answer, where the page opens, is the one that loses nothing.
+            Item("Go back to $emu", "", "Opens it, to save and close whatever is in it from its own menu.", onA = { app.backToHeld() }),
             if (h.canClose && app.device.bridge) Item("Close $emu, then play $wanted", "", "$emu is still running, and a game may be open in it. " +
                 "It is closed as it is: anything not saved inside it is lost.", onA = { app.closeHeldAndPlay() }) else null,
-            Item("Play $wanted anyway", "", "$emu is left as it is. With two big emulators in memory the Nova can stall.", onA = { app.playAnyway() }),
-            Item("Go back to $emu", "", "Opens it, to save and close whatever is in it from its own menu.", onA = { app.backToHeld() }),
+            Item("Play $wanted anyway", "", "$emu is left as it is. With two big emulators in memory the device can stall.", onA = { app.playAnyway() }),
        ) else listOf(
             Item("Close it, then play $wanted", "", "$emu keeps the game it has until that game is closed from inside it. Press A and $open comes up. " +
                 "Close it there$how, and $wanted starts by itself.", onA = { app.closeThenPlay() }),
@@ -1552,7 +1577,11 @@ fun MenuScreen(screen: Screen.Menu) {
     }
     Frame(
         header = { Crumbs(*def.crumbs.toTypedArray()) },
-        hints = def.hints ?: listOf("A" to "Select", "◀ ▶" to "Change", "B" to "Back"),
+        // Only the buttons the highlighted row answers to.
+        hints = def.hints ?: items.getOrNull(f).let { here ->
+            listOfNotNull(("A" to "Select").takeIf { here?.onA != null || here?.onStep != null },
+                ("◀ ▶" to "Change").takeIf { here?.onStep != null }, "B" to "Back")
+        },
         footer = def.footer ?: if (items.size > 8) "${f + 1} / ${items.size}" else "",
    ) {
         if (items.isEmpty()) {
@@ -1575,7 +1604,8 @@ fun MenuScreen(screen: Screen.Menu) {
             Gap(h = 28)
             // What the highlighted setting does, in a sentence. A page with few choices has the room for more: the
             // Did not open page's steps run to five lines and were cut at three.
-            val noteLines = (9 - items.size).coerceIn(3, 6)
+            // (The body is 784 tall; eight rows of 66 and the gap leave room for seven lines, so six always fit.)
+            val noteLines = 6
             Box(Modifier.fillMaxWidth(0.86f).widthIn(max = 1000.u()).height((32 * noteLines).u())) {      // a line of the note as drawn: 22 px, 1.45 apart
                 T(items[f].note, 19, color = Ink.Muted, weight = FontWeight.Normal, lineHeight = 1.45f, maxLines = noteLines)
             }
@@ -1768,7 +1798,7 @@ fun IdleScreen() {
                 T("_", 220, color = Ink.Accent, weight = FontWeight.Bold, lineHeight = 0.86f)
             }
             if (last != null) Column(verticalArrangement = Arrangement.spacedBy(8.u())) {
-                Label("Continue", size = 12)
+                Label(if (app.isOpen(last.key)) "Still open" else "Continue", size = 12)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(20.u())) {
                     T(last.title, 34, Modifier.weight(1f, fill = false), color = Ink.Accent, weight = FontWeight.Bold, tracking = -0.8f, lineHeight = 1.1f, maxLines = 2)
                     Label(Catalog.system(last.system)?.name ?: "", Modifier.padding(bottom = 6.u()), size = 12)

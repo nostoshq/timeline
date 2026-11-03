@@ -422,7 +422,7 @@ class SoundService : Service() {
         }
     }.getOrDefault(false)
 
-    /** The equaliser is set up and changed away from the screen's thread: opening it can take a moment. */
+    /** The equalizer is set up and changed away from the screen's thread: opening it can take a moment. */
     private val worker = Executors.newSingleThreadExecutor()
 
     private fun apply() { runCatching { worker.execute { applyNow() } } }
@@ -435,7 +435,7 @@ class SoundService : Service() {
         val curve = Eq.parse(prefs.str("eq.curve"))
         val compress = prefs.bool("eq.compress", false)
         val quiet = prefs.bool("eq.speakersOnly", true) && external()
-        // The full chain first (Android's DynamicsProcessing); on a device without it, the five-band equaliser.
+        // The full chain first (Android's DynamicsProcessing); on a device without it, the five-band equalizer.
         state = runCatching {
             val want = Eq.format(curve) + "|" + compress
             val c = chain?.takeIf { made == want } ?: run {
@@ -461,7 +461,7 @@ class SoundService : Service() {
                 if (quiet) "Resting: headphones or another output is connected" else "Working, ${e.numberOfBands} bands only"
             } catch (e: Throwable) {
                 eq = null
-                "This device does not offer a system-wide equaliser"
+                "This device does not offer a system-wide equalizer"
             }
         }
     }
@@ -556,8 +556,9 @@ object ChargeCare {
         val battery = runCatching { ctx.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED)) }.getOrNull()
         val plugged = (battery?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
         val screenOn = ctx.getSystemService(PowerManager::class.java)?.isInteractive != false
-        // In use: a game, or the screen on with something other than the launcher in front (an app opened from it).
-        val inUse = prefs.str("playing").isNotEmpty() || (screenOn && !prefs.bool("ui.front", false))
+        // In use: the screen on with a game, or with something other than the launcher in front (an app opened from it).
+        // A game left asleep on the charger overnight is not in use: it is the case the hold is for.
+        val inUse = screenOn && (prefs.str("playing").isNotEmpty() || !prefs.bool("ui.front", false))
         // A time saved before a restart counts from that start and can be later than now: it is not a use.
         val used = maxOf(lastUse, prefs.long("charge.used", 0L).takeIf { it <= android.os.SystemClock.elapsedRealtime() } ?: 0L)
         val idle = android.os.SystemClock.elapsedRealtime() - used
@@ -763,6 +764,9 @@ object DolphinResume {
 
     val clearScript = "rm -f $TEMP\necho ok\n"
 
+    /** Another game's state that could not be taken in: renamed beside it in Dolphin's folder, never removed. */
+    fun keepScript(key: String): String = "[ -f $TEMP ] || { echo none; exit 0; }\nmv -f $TEMP $TEMP.${name(key)}.kept && echo ok || echo failed\n"
+
     /** The last word the script printed, "" when it could not be run. One at a time: collect, place and clear never overlap. */
     @Synchronized private fun run(ctx: Context, name: String, script: String): String = runCatching {
         val f = java.io.File(ctx.filesDir, name)
@@ -803,6 +807,9 @@ object DolphinResume {
         val uid = runCatching { ctx.packageManager.getApplicationInfo(DolphinPack.PACKAGE, 0).uid }.getOrNull() ?: return false
         return run(ctx, "dolphin-place.sh", placeScript(from.absolutePath, uid)) == "ok"
     }
+
+    /** Kept aside rather than lost when it belongs to a game other than the one starting ([keepScript]). */
+    fun keepAside(ctx: Context, key: String): Boolean = run(ctx, "dolphin-keep.sh", keepScript(key)) in setOf("ok", "none")
 
     /** Before any other start: nothing waiting in Dolphin's folder. */
     fun clear(ctx: Context): Boolean = run(ctx, "dolphin-clear.sh", clearScript) == "ok"
