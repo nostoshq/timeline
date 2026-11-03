@@ -66,8 +66,10 @@ a single choice in Settings, Picture, Signal, and you can change any of them.
   Genesis's measured color levels, and an American set's bluer white.
 - **The beam simulator.** On 120 Hz screens, Blur Busters' CRT beam simulator lights each picture for half the time,
   the way a tube did, so moving scenes stay sharp instead of smearing. Black frames are there as the plainer choice.
-- **The 3D consoles** at their own resolution, with the PlayStation's dithering and wobble, and the 480-line consoles
-  without gaps between their lines, as an interlaced picture looked. A sharper look is one switch away.
+- **The 3D consoles** drawn sharper than the consoles could: the PlayStation at four times its detail, the Nintendo 64 at
+  eight and the Dreamcast at four, each brought back to its console's lines for the CRT, and the 480-line consoles
+  without gaps between their lines, as an interlaced picture looked. The true picture, with the PlayStation's
+  dithering and wobble, is one switch away.
 - **GameCube, Wii and PlayStation 2** get a 480-line television written for Dolphin and ARMSX2.
 - **Game Boy, Game Boy Color, Game Boy Advance, Game Gear and DS** look as their screens did: the Game Boy's green dot
   matrix and smear, the Color's washed-out color, the Advance's darker unlit screen. L1 and R1 put a Game Boy game on

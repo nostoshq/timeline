@@ -96,22 +96,28 @@ spare, and the beam's dark refresh would halve what is left.
 
 ## The 3D consoles
 
-The PlayStation, Nintendo 64, Saturn and Dreamcast drew low-resolution 3D. Timeline shows each as it was:
+The PlayStation, Nintendo 64, Saturn and Dreamcast drew low-resolution 3D. Timeline draws them sharper than the
+consoles could, at the largest whole multiple each keeps smooth on a Retroid Pocket Nova, then brings the picture back
+to the console's own lines for the CRT:
 
-- **PlayStation** at its own resolution, with its 15-bit color and dithering, and the wobble of its corners.
-- **Nintendo 64** drawn at four times its detail and averaged back to its own 320 by 240, the nearest thing to the
-  smoothing its video chip did.
+- **PlayStation** at four times its detail, 960 lines, with clean edges and without its dithering and the wobble of its
+  corners. At eight times the graphics chip ran flat out and pictures came late.
+- **Nintendo 64** at eight times, 2560 by 1920, averaged down to 1280 by 960, which smooths every edge.
 - **Saturn** at its own resolution, its interlaced hi-res games drawn field by field as a set drew them.
-- **Dreamcast** at its own 640 by 480.
+- **Dreamcast** at four times, 2560 by 1920, averaged down to 1280 by 960, with far textures kept sharp. Drawn the
+  compatible way, through OpenGL, it stays at twice.
+
+Switch **3D consoles: sharper than the console** off for the true picture: the PlayStation at its own resolution, with
+its 15-bit color, its dithering and the wobble of its corners; the Nintendo 64 averaged back to its own 320 by 240,
+the nearest thing to the smoothing its video chip did; the Dreamcast at its own 640 by 480; GameCube and Wii at their
+own resolution.
 
 A picture of 480 lines sent to a television, by any cable including RGB, is drawn without gaps between its lines: those
 consoles sent their lines interlaced, and on a set each field filled the other's gaps. Through the Dreamcast's VGA box,
 each line is drawn as its own beam, as a monitor showed it. This holds in either look.
 
-**3D consoles: sharper than the console** draws the PlayStation and Dreamcast at 960 lines with clean edges and no
-wobble, GameCube and Wii at twice their detail, and keeps the Nintendo 64's extra detail across. A game that
-struggles can be run at its own resolution from its page: **Options, Run lighter**. After a sitting with more than 5%
-of its pictures late, the page says so and X does the same.
+A game that struggles can be run at its own resolution from its page: **Options, Run lighter**. After a sitting with
+more than 5% of its pictures late, the page says so and X does the same.
 
 ## GameCube, Wii and PlayStation 2
 
@@ -121,9 +127,9 @@ raster of 480 lines whose beams spread with brightness (a dark line leaves the g
 nearly fills it), the red, green and blue stripes of an aperture grille, and a little glow. On component, each line
 stands apart and the game's picture under it is sharp: Dolphin skips the blending games used against flicker, which
 they need only for interlaced output. On S-video and composite, the lines are softer, as a set's interlaced fields
-left them, and the games keep that blending. GameCube and Wii are drawn at their own resolution and told which cable
-is in. On Retroid devices, PlayStation 2 games get the same tube through ARMSX2, with **Settings, Device, Set up
-ARMSX2 for me** switched on.
+left them, and the games keep that blending. GameCube and Wii are drawn at three times their detail (at their own
+resolution in the true picture) and told which cable is in. On Retroid devices, PlayStation 2 games get the same tube
+through ARMSX2, with **Settings, Device, Set up ARMSX2 for me** switched on.
 
 ## The handhelds
 

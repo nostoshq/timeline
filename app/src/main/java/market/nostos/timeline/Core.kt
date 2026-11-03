@@ -727,6 +727,14 @@ object DolphinPack {
     )
     private val special: Map<String, Map<String, String>> = holds.mapValues { mapOf("WiimoteProfile1" to it.value.profile) }
 
+    /**
+     * Wii games whose hold took the Nunchuk away: Xenoblade, on the Classic Controller since 1.5.0. A place made while it
+     * had the remote and Nunchuk stops on "Connect the Nunchuk" until the game is reset, so a game resumed from such a
+     * place keeps the remote and Nunchuk ([Look.keptOnNunchuk]) until it next starts afresh. A place kept before this
+     * version first ran counts as made on the remote and Nunchuk (`hold.since`).
+     */
+    val nunchukFirst: Set<String> = setOf("SX4E01")
+
     /** GameCube games that start fresh every time: Luigi's Mansion's memory card breaks when a saved place is loaded (Dolphin 12220, 13320). */
     fun startsFresh(base: String): Boolean = base == "luigi's mansion"
 
@@ -805,13 +813,15 @@ object DolphinPack {
         "Core" to listOf("GFXBackend" to if (look.dolphinGl) "OGL" else "Vulkan", "AutoDiscChange" to "True",
             "ProgressiveScan" to if (look.signalOf("gcwii") == "Component") "True" else "False") +
             (if (pad && !wiiGame) (2..ports).map { "SIDevice${it - 1}" to "6" } else emptyList()),
-        // The console's own detail for the true picture (the sharper look: twice it, 1280 by 1056), and shaders built
-        // ahead of time and before a game starts, so the first sight of an effect does not stop the game for a moment.
+        // The console's own detail for the true picture; the sharper look draws three times it (1920 by 1584), three rows to
+        // each of the console's lines: on a Retroid Pocket Nova four times ran Super Mario Galaxy with 4% of its pictures
+        // late, where three kept Galaxy, Xenoblade, Donkey Kong Country Returns and Def Jam as on time as twice did. Shaders
+        // are built ahead of time and before a game starts, so the first sight of an effect does not stop the game for a moment.
         // GPU texture decoding off: with it on, the Nova's Vulkan driver crashes as games start (vkUpdateDescriptorSets;
         // Animal Crossing, Beyond Good & Evil and Eternal Darkness every time, and all three run with it off).
-        // No MSAA: the picture is already drawn at twice the console's detail, and MSAA breaks several games (Mario Kart
+        // No MSAA: the picture is already drawn at three times the console's detail, and MSAA breaks several games (Mario Kart
         // Wii, Super Mario Galaxy 2's sky, Spider-Man 2's shadows) and costs speed.
-        "Video_Settings" to listOf("InternalResolution" to if (look.sharp) "2" else "1", "ShaderCompilationMode" to "2", "WaitForShadersBeforeStarting" to "True",
+        "Video_Settings" to listOf("InternalResolution" to if (look.sharp) "3" else "1", "ShaderCompilationMode" to "2", "WaitForShadersBeforeStarting" to "True",
             "EnableGPUTextureDecoding" to "False", "MSAA" to "1", "SSAA" to "False"),
         // The tube (Crt3d.dolphin, put in Dolphin's Shaders folder below). On composite or S-video, the game's own
         // filtering as it copies each picture out (the three-line blend games used against 480 interlaced lines'
@@ -838,6 +848,7 @@ object DolphinPack {
      * The handheld's controls as a GameCube pad. The names are Dolphin's own for an Android gamepad, taken from what
      * it wrote when each control was mapped by hand: buttons by name, sticks and triggers by Android's axis number
      * (0 and 1 left stick, 11 and 14 right stick, 15 and 16 d-pad, 17 or 23 left trigger, 18 or 22 right trigger).
+     * The rumble goes to the controller's own motor, which Dolphin calls Motor 0 ([RUMBLE]).
      */
     fun gamePad(device: String): String = gamePad(listOf(device))
 
@@ -851,7 +862,16 @@ object DolphinPack {
         "Triggers/L" to "`Button L2`", "Triggers/R" to "`Button R2`",
         "Triggers/L-Analog" to "`Axis 23+` | `Axis 17+`", "Triggers/R-Analog" to "`Axis 22+` | `Axis 18+`",
         "D-Pad/Up" to "`Axis 16-`", "D-Pad/Down" to "`Axis 16+`", "D-Pad/Left" to "`Axis 15-`", "D-Pad/Right" to "`Axis 15+`",
-   ))))
+        "Rumble/Motor" to RUMBLE,
+    ))))
+
+    /**
+     * A controller's rumble motor as Dolphin names it: the first vibrator of the Android input device (Dolphin's
+     * ControllerInterface/Android, AndroidMotor: "Motor " and its number), a handheld's built-in controller's own and an
+     * Xbox controller's alike. RetroArch's rumble goes to the same one (its device vibration is off). Without a line for
+     * it, a GameCube game's rumble and a Wii Remote's went nowhere.
+     */
+    private const val RUMBLE = "`Motor 0`"
 
     /** Settings in a profile that are not controls, left as they are by [across]. */
     private fun isSetting(key: String) = key == "Device" || key == "Extension" || key.startsWith("Options/") || key == "IR/Auto-Hide" || key == "IR/Relative Input"
@@ -886,6 +906,7 @@ object DolphinPack {
             "Tilt/Left" to "$held & `Axis 0-`", "Tilt/Right" to "$held & `Axis 0+`")
         val keys = LinkedHashMap<String, String>()
         keys["Device"] = devices.first()
+        keys["Rumble/Motor"] = RUMBLE       // the remote's own motor, whatever it is held as
         if (hold == Hold.CLASSIC) {
             // The Classic Controller has the handheld's own shape: buttons, sticks, d-pad and shoulders where they are.
             keys += listOf("Extension" to "Classic",
@@ -962,7 +983,10 @@ object DolphinPack {
         for (letter in wii) out += Doc("GameSettings/$letter.ini", text = family(look, wiiGame = true, pad = pad, ports = ports.size))
         // Dolphin keeps a game's own settings in a file named after its full ID: only the control lines are added.
         // With the controls left to Dolphin again, those lines are taken back out.
-        for ((id, keys) in special) out += if (pad) Doc("GameSettings/$id.ini", set = mapOf("Controls" to keys)) else Doc("GameSettings/$id.ini", remove = mapOf("Controls" to keys.keys))
+        for ((id, held) in special) {
+            val keys = if (id in look.keptOnNunchuk) mapOf("WiimoteProfile1" to PROFILE) else held
+            out += if (pad) Doc("GameSettings/$id.ini", set = mapOf("Controls" to keys)) else Doc("GameSettings/$id.ini", remove = mapOf("Controls" to keys.keys))
+        }
         for (id in padGames) padGame(if (pad) ports.size else 0).let { (set, remove) -> out += Doc("GameSettings/$id.ini", set = set, remove = remove) }
         // Games Dolphin itself stops with a warning box at every start, for a fault of Dolphin's that the game then
         // plays straight through. For these the warning is shown as a line on the picture instead of a box to press.
@@ -1886,7 +1910,7 @@ data class Look(
     val handheld: String = RetroPack.TRUE_LCD,
     val transparency: Boolean = true,                  // Game Boy and Game Boy Color: Pixel Transparency over the grid
     val integer: Boolean = true,
-    val sharp: Boolean = false,                        // the sharper look: 3D consoles drawn past their own detail (off: the true picture)
+    val sharp: Boolean = true,                         // the sharper look: 3D consoles drawn past their own detail (off: the true picture)
     val crt3d: Boolean = true,                         // the 3D consoles through the same CRT as the television consoles
     val crt3dSlang: Boolean = true,                    // the collection's GDV could be made into the 3D one (see Crt3d.slang)
     val compatible: Boolean = false,                   // PlayStation and Dreamcast drawn without Vulkan, for a device where their Vulkan path fails
@@ -1910,6 +1934,7 @@ data class Look(
     val extras: Map<String, Pair<String, String>> = emptyMap(),   // per system: what M1 and M2 do, where it differs from the usual
     val lighter: Map<String, Boolean> = emptyMap(),    // "system/stem" of RetroArch games run lighter (true), or once run lighter (false)
     val lighterCodes: Map<String, Boolean> = emptyMap(),   // the same for GameCube and Wii games, by disc ID
+    val keptOnNunchuk: Set<String> = emptySet(),           // Wii games resumed from a place made on the remote and Nunchuk (DolphinPack.nunchukFirst)
     val dolphinGlCodes: Map<String, Boolean> = emptyMap(), // GameCube and Wii games drawn with OpenGL on their own (true), or no longer (false), by disc ID
     val reconnectByName: Boolean = true,               // no two connected controllers share a name (see base)
     val signal: Map<String, String> = emptyMap(),      // per console group (RetroPack.signals): the signal it reached the screen by, where changed
@@ -2456,9 +2481,11 @@ object RetroPack {
      * console's own size both ways (Nintendo 64: 1280 x 960 to 320 x 240, close to what its video chip put out), and a
      * picture of 400 lines or more is drawn without gaps between its lines: those consoles sent 480 interlaced lines,
      * whose two fields fill each other's gaps on a television. Only the Dreamcast's VGA box, a progressive picture on a
-     * monitor, keeps them, in either look. The sharper look keeps the extra detail across.
+     * monitor, keeps them, in either look. The sharper look keeps the extra detail across, up to 1280 columns: a
+     * picture drawn wider than that has [columns] halvings of its columns as well.
      */
-    fun crt3dPreset(look: Look, p: Paths, halvings: Int, glsl: Boolean, beam: Boolean = false, group: String = "", native: Boolean = false): String {
+    fun crt3dPreset(look: Look, p: Paths, halvings: Int, glsl: Boolean, beam: Boolean = false, group: String = "", native: Boolean = false,
+                    columns: Int = if (look.sharp) 0 else halvings): String {
         val dir = "${p.home}/${Crt3d.DIR}"
         val stock = if (glsl) "$dir/${Crt3d.STOCK_GLSL}" else "${p.slang}/stock.slang"
         val crt = if (glsl) "$dir/${Crt3d.GLSL}" else "$dir/${Crt3d.SLANG}"
@@ -2475,8 +2502,9 @@ object RetroPack {
             val i = b + j
             lines += "shader$i = \"$stock\""
             lines += "filter_linear$i = \"true\""
-            // With linear filtering, half the size samples exactly between texels: each pass averages a 2 x 2 block.
-            lines += "scale_type_x$i = \"source\""; lines += "scale_x$i = \"" + (if (look.sharp) "1.0" else "0.5") + "\""
+            // With linear filtering, half the size samples exactly between texels: each pass averages a 2 x 2 block, or
+            // two rows alone once the columns are back to the width kept (the first [columns] passes halve them too).
+            lines += "scale_type_x$i = \"source\""; lines += "scale_x$i = \"" + (if (j < columns) "0.5" else "1.0") + "\""
             lines += "scale_type_y$i = \"source\""; lines += "scale_y$i = \"0.5\""
         }
         var c = b + halvings
@@ -2719,13 +2747,18 @@ object RetroPack {
     fun n64Frames(look: Look): Boolean = look.motion3d != "Off" && look.hz in 119..121
 
     /**
-     * Nintendo 64, drawn at four times ([detail], unless the game is run lighter) in both looks. The console's video chip
-     * smoothed every edge and resampled the picture; GLideN64 has none of that, so the true picture averages the four
-     * times back to 320 x 240 ([crt3dPreset]), the nearest thing to it. Textures use the console's own three-point
-     * filter ("3point is the original system specific way", the core's own note), and nothing the console lacked is added.
+     * Nintendo 64, drawn at eight times ([detail], unless the game is run lighter) in both looks: 2560 x 1920, averaged
+     * back down ([crt3dPreset]) so each pixel of a 1280 x 960 picture is four drawn ones, which smooths every edge
+     * (Perfect Dark, Conker, Banjo-Tooie and Rogue Squadron kept every picture on time on a Retroid Pocket Nova with its
+     * graphics chip at a third of its most). The console's video chip smoothed every edge and resampled the picture;
+     * GLideN64 has none of that, so the true picture averages it back to 320 x 240, the nearest thing to it. Textures use
+     * the console's own three-point filter ("3point is the original system specific way", the core's own note), and
+     * nothing the console lacked is added. Blending is the accurate kind, as GLideN64 itself has it: the core's faster
+     * one for phones loses Blast Corps' banners and logo (GLideN64 #2948), and on the Nova's chip it cost 1 or 2% of its time.
      */
     private fun mupen(detail: Boolean, parallel: Boolean = false) = mapOf(
-        "mupen64plus-43screensize" to if (detail) "1280x960" else "320x240",
+        "mupen64plus-43screensize" to if (detail) "2560x1920" else "320x240",
+        "mupen64plus-EnableLegacyBlending" to "False",
         "mupen64plus-BilinearMode" to "3point",
         "mupen64plus-MultiSampling" to "0",
         "mupen64plus-FXAA" to "0",
@@ -2822,11 +2855,14 @@ object RetroPack {
 
     /**
      * Dreamcast. The true picture is its own 640 x 480 with plain texture filtering, as the console drew it; the sharper
-     * look draws at 1280 x 960 with anisotropic filtering at 16, which keeps far textures sharp. The console is told the
-     * cable chosen under Signal: VGA as through the VGA box (a game that refuses it falls back to composite by itself,
-     * the core's own rule), any other as a television cable.
+     * look draws at four times, 2560 x 1920, brought back down to 1280 x 960 and the console's 480 lines ([crt3dPreset]),
+     * with anisotropic filtering at 16, which keeps far textures sharp (Sonic Adventure 2 playing on its own kept every
+     * picture on time on a Retroid Pocket Nova with its graphics chip at about a third of its most). Drawn the compatible
+     * way, through OpenGL, it stays at twice. The console is told the cable chosen under Signal: VGA as through the VGA
+     * box (a game that refuses it falls back to composite by itself, the core's own rule), any other as a television cable.
      */
-    private fun flycast(look: Look, sharp: Boolean) = mapOf("reicast_internal_resolution" to if (sharp) "1280x960" else "640x480", "reicast_per_content_vmus" to "VMU A1",
+    private fun dcSize(look: Look, sharp: Boolean) = when { !sharp -> "640x480"; look.compatible -> "1280x960"; else -> "2560x1920" }
+    private fun flycast(look: Look, sharp: Boolean) = mapOf("reicast_internal_resolution" to dcSize(look, sharp), "reicast_per_content_vmus" to "VMU A1",
         "reicast_anisotropic_filtering" to if (sharp) "16" else "off",
         "reicast_cable_type" to if (look.signalOf("dreamcast") == "VGA") "VGA" else "TV (Composite)")
 
@@ -2835,6 +2871,12 @@ object RetroPack {
      * and no Controller Pak saves). The core plugs a Controller Pak into port 1 and nothing into the others, so these
      * never shook. Every port gets one; a game for fewer players never looks at the rest. The games that save to a
      * Controller Pak keep it: on the console too, the pak holding the saves took the slot.
+     *
+     * Four more save everything on the cartridge and used the Controller Pak only for copies: Perfect Dark (its agent
+     * files, copied; it asks for the pak it saves to whenever it wants one), No Mercy (created wrestlers copied to take
+     * to a friend's), Ken Griffey Jr. (a copy of the season) and Diddy Kong Racing (time trial ghosts, its note says how
+     * to keep one). Nothing is lost: each game's save file holds its four Controller Paks whatever is plugged in, so
+     * switching back brings any notes back. Excitebike 64 keeps its pak, which holds its own tracks.
      */
     private val rumbleGames = setOf("1080 Snowboarding (Japan, USA) (En,Ja)", "Banjo-Kazooie (USA) (Rev 1)", "Banjo-Tooie (USA)",
         "Conker's Bad Fur Day (USA)", "Donkey Kong 64 (USA)", "F-Zero X (USA)", "GoldenEye 007 (USA)", "Jet Force Gemini (USA)",
@@ -2842,7 +2884,8 @@ object RetroPack {
         "Mario Golf (USA)", "Mario Party 2 (USA)", "Mario Party 3 (USA)", "Mario Tennis (USA)", "Paper Mario (USA)",
         "Rocket - Robot on Wheels (USA)", "Snowboard Kids 2 (USA)", "Star Fox 64 (USA) (Rev 1)", "Star Wars - Rogue Squadron (USA) (Rev 1)",
         "Star Wars Episode I - Racer (USA)", "Super Smash Bros. (USA)", "Tsumi to Batsu - Hoshi no Keishousha (Japan)",
-        "WCW-nWo Revenge (USA)", "Yoshi's Story (USA) (En,Ja)")
+        "WCW-nWo Revenge (USA)", "Yoshi's Story (USA) (En,Ja)", "Perfect Dark (USA) (Rev 1)", "WWF No Mercy (USA) (Rev 1)",
+        "Major League Baseball Featuring Ken Griffey Jr. (USA)", "Diddy Kong Racing (USA) (En,Fr) (Rev 1)")
 
     /** Killer Instinct Gold: its six attacks, four of them on the C buttons, put on six buttons of their own (n64Remap). */
     const val KI_GOLD = "Killer Instinct Gold (USA) (Rev 2)"
@@ -2857,14 +2900,25 @@ object RetroPack {
             "Legend of Zelda, The - Majora's Mask (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),   // the Pictograph Box's delay (GLideN64 a04081ad6a)
             "Paper Mario (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),      // its intro (the core's own note on the option)
             "Banjo-Kazooie (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyColorToRDRAM" to "Sync"),   // the jigsaw transitions (GLideN64 e8a5e8292b)
-            // Black patches, and with the faster blending the banners and logo gone too (GLideN64 #2948, the core's maintainer)
-            "Blast Corps (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True", "mupen64plus-EnableLegacyBlending" to "False"),
+            // Black patches (GLideN64 #2948, the core's maintainer); the accurate blending every game has keeps its banners and logo
+            "Blast Corps (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),
             "Mario Tennis (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),    // the last match's names left on the scoreboard (#2952)
             KI_GOLD to mapOf("mupen64plus-alt-map" to "True"),                               // every C button on a button of its own
         )
         val shake = (1..4).associate { "mupen64plus-pak$it" to "rumble" }
         (rumbleGames + own.keys).associateWith { (if (it in rumbleGames) shake else emptyMap()) + own[it].orEmpty() }
     }
+
+    /**
+     * Nintendo 64 games drawn at four times (1280 x 960) rather than eight, with their own preset bringing them back to
+     * their lines (two halvings). Pokemon Snap reads its pictures back to check your photos, and at eight times a
+     * third of them came late with the chip busy on a Retroid Pocket Nova; every other game measured held eight.
+     */
+    val n64FourTimes: Set<String> = setOf("Pokemon Snap (USA)")
+
+    /** A game's own N64 settings: its fixes, and four times for [n64FourTimes] unless it is run lighter. */
+    private fun n64Own(stem: String, light: Boolean): Map<String, String> = n64Fixes[stem].orEmpty() +
+        if (!light && stem in n64FourTimes) mapOf("mupen64plus-43screensize" to "1280x960") else emptyMap()
 
     /**
      * Killer Instinct Gold's buttons, every player: punches on Y, X and R1 and kicks on B, A and R2, light to hard (by
@@ -2875,6 +2929,32 @@ object RetroPack {
     fun n64Remap(): String = buildString {
         for (player in 1..4) for ((button, id) in listOf("y" to 1, "x" to 10, "r" to 9, "b" to 0, "a" to 8, "r2" to 11))
             append("input_player${player}_btn_$button = \"$id\"\n")
+    }
+
+    /**
+     * Shooters made with walking on the C buttons and aiming on the stick: Turok's own layout, Turok 2's Expert one,
+     * which it starts with, and Sin and Punishment's first, which moves with C-left and C-right. With the sticks swapped
+     * they play as a modern shooter does, walking on the left stick and aiming with the right, with nothing to change in
+     * the game. GoldenEye and Perfect Dark are left as they are: they start with walking and turning on the one stick,
+     * which a swap would put on the right.
+     */
+    val twinStick: Set<String> = setOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)",
+        "Tsumi to Batsu - Hoshi no Keishousha (Japan)")
+
+    /**
+     * [twinStick]'s controls, every player: the left stick is the C buttons (the core's right stick) and the right stick is
+     * the console's stick; R2 is Z, which fires, as well as L2 (R2's C-button mode is not needed with C on a stick). A
+     * game's own remap takes the place of the core's, so [n64Buttons] is given again. RetroArch numbers the stick
+     * directions 16 to 23: left x+, x-, y+, y-, then right.
+     */
+    fun n64TwinStick(): String = n64Buttons() + buildString {
+        for (player in 1..4) {
+            for ((i, dir) in listOf("x+", "x-", "y+", "y-").withIndex()) {
+                append("input_player${player}_stk_l_$dir = \"${20 + i}\"\n")
+                append("input_player${player}_stk_r_$dir = \"${16 + i}\"\n")
+            }
+            append("input_player${player}_btn_r2 = \"12\"\n")
+        }
     }
 
     fun files(look: Look, p: Paths, pal: List<Pair<String, String>> = emptyList(), arcade: List<String> = emptyList(),
@@ -3007,23 +3087,27 @@ object RetroPack {
             out["$core/$core.slangp"] = "shaders = \"1\"\n" + beamPass(p, core == "Flycast") + "\nscale_type0 = \"viewport\"\n" +
                 "GAIN_VS_BLUR = \"0.5\"\n" + (if (core == "Flycast") "" else "LCD_ANTI_RETENTION_TOGGLE = \"0.0\"\nSCAN_DIRECTION = \"0.0\"\n")
         // With the CRT look, the same GDV as the television consoles, after the picture is brought back to the console's
-        // own lines: four times the detail is four rows to a line (two halvings), Dreamcast's 960 is twice its 480 (one);
-        // drawn at the console's own resolution (the true picture), in software or run lighter, there is nothing to bring
-        // down (none). Nintendo 64 is drawn at four times in both looks, so it always has two. Nintendo 64, and Dreamcast drawn the
-        // compatible way, run under OpenGL and take the GLSL one (RetroArch picks the preset its driver can use).
+        // own lines: four times the detail is four rows to a line (two halvings), eight times three, and Dreamcast's 1920
+        // is four times its 480 (two); drawn at the console's own resolution (the true picture), in software or run
+        // lighter, there is nothing to bring down (none). Nintendo 64 is drawn at eight times in both looks, so it always
+        // has three. A picture drawn wider than 1280 columns (Nintendo 64's and Dreamcast's 2560) has its columns halved
+        // once as well in the sharper look. Nintendo 64, and Dreamcast drawn the compatible way, run under OpenGL and take
+        // the GLSL one (RetroArch picks the preset its driver can use).
         if (look.crt3d) {
             val psx = if (look.sharp && !look.compatible) 2 else 0
-            val n64 = 2
-            val dc = if (look.sharp) 1 else 0
+            val n64 = 3
+            val n64Columns = if (look.sharp) 1 else 3
+            val dc = when (dcSize(look, look.sharp)) { "2560x1920" -> 2; "1280x960" -> 1; else -> 0 }
+            val dcColumns = if (dc == 2) 1 else 0
             if (look.crt3dSlang) {
                 out["SwanStation/SwanStation.slangp"] = crt3dPreset(look, p, psx, glsl = false, beam = true, group = "psx")
                 out["Beetle PSX HW/Beetle PSX HW.slangp"] = crt3dPreset(look, p, psx, glsl = false, beam = true, group = "psx")
                 out["Beetle Saturn/Beetle Saturn.slangp"] = crt3dPreset(look, p, 0, glsl = false, beam = true, group = "saturn", native = true)
-                out["Flycast/Flycast.slangp"] = crt3dPreset(look, p, dc, glsl = false, beam = "Flycast" in beamed, group = "dreamcast")
-                out["Mupen64Plus-Next/Mupen64Plus-Next.slangp"] = crt3dPreset(look, p, n64, glsl = false, beam = n64Parallel(look), group = "n64")
+                out["Flycast/Flycast.slangp"] = crt3dPreset(look, p, dc, glsl = false, beam = "Flycast" in beamed, group = "dreamcast", columns = dcColumns)
+                out["Mupen64Plus-Next/Mupen64Plus-Next.slangp"] = crt3dPreset(look, p, n64, glsl = false, beam = n64Parallel(look), group = "n64", columns = n64Columns)
             }
-            out["Flycast/Flycast.glslp"] = crt3dPreset(look, p, dc, glsl = true, group = "dreamcast")
-            out["Mupen64Plus-Next/Mupen64Plus-Next.glslp"] = crt3dPreset(look, p, n64, glsl = true, group = "n64")
+            out["Flycast/Flycast.glslp"] = crt3dPreset(look, p, dc, glsl = true, group = "dreamcast", columns = dcColumns)
+            out["Mupen64Plus-Next/Mupen64Plus-Next.glslp"] = crt3dPreset(look, p, n64, glsl = true, group = "n64", columns = n64Columns)
             // A game run lighter is drawn at its console's own lines: its own preset, with nothing to bring down. In the
             // true picture only Nintendo 64 has anything to make lighter.
             for ((key, light) in look.lighter) {
@@ -3045,6 +3129,11 @@ object RetroPack {
                     }
                 }
             }
+            // A Nintendo 64 game drawn at four times: two halvings back to its lines.
+            for (stem in n64FourTimes) if (look.lighter["n64/$stem"] != true) {
+                if (look.crt3dSlang) out["Mupen64Plus-Next/$stem.slangp"] = crt3dPreset(look, p, 2, glsl = false, beam = n64Parallel(look), group = "n64")
+                out["Mupen64Plus-Next/$stem.glslp"] = crt3dPreset(look, p, 2, glsl = true, group = "n64")
+            }
         }
         // Dreamcast has two ways to draw. Vulkan is the fast one. OpenGL is the fallback, and RetroArch has to be
         // started in OpenGL for the core to be offered it. Always written, so switching back switches back.
@@ -3062,6 +3151,7 @@ object RetroPack {
         out["Mupen64Plus-Next/Mupen64Plus-Next.opt"] = cfg(mupen(true, n64Parallel(look)))
         out["remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp"] = n64Buttons()
         out["remaps/Mupen64Plus-Next/$KI_GOLD.rmp"] = n64Remap()
+        for (stem in twinStick) out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64TwinStick()
         out["remaps/SwanStation/SwanStation.rmp"] = dualShock(261)
         out["remaps/Beetle PSX HW/Beetle PSX HW.rmp"] = dualShock(517)
         // Link's Awakening saves only with A, B, START and SELECT together, which would close the game first: START and
@@ -3081,7 +3171,7 @@ object RetroPack {
             val sharp = look.sharp && !light
             when (system) {
                 "psx" -> { out["SwanStation/$stem.opt"] = cfg(swanstation(look, sharp, stem)); out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, sharp, stem)) }
-                "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(!light, n64Parallel(look)) + n64Fixes[stem].orEmpty())
+                "n64" -> out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(!light, n64Parallel(look)) + n64Own(stem, light))
                 "dreamcast" -> out["Flycast/$stem.opt"] = cfg(flycast(look, sharp) + dcFixes[stem].orEmpty())
             }
         }
@@ -3091,7 +3181,7 @@ object RetroPack {
             out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, stem))
             out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, look.sharp, stem))
         }
-        for ((stem, fix) in n64Fixes) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + fix)
+        for (stem in n64Fixes.keys + n64FourTimes) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + n64Own(stem, false))
         for ((stem, fix) in dcFixes) if ("dreamcast/$stem" !in look.lighter) out["Flycast/$stem.opt"] = cfg(flycast(look, look.sharp) + fix)
         // Rayman 2 does not start with achievements on (flycast #2566): that one game goes without them.
         out["Flycast/Rayman 2 - The Great Escape (USA) (En,Fr,De,Es,It).cfg"] = cfg(mapOf("cheevos_enable" to "false"))
@@ -3762,7 +3852,8 @@ object ControlsNote {
         "super smash bros. brawl" to "Played on the GameCube layout: the right stick is the C stick and R1 is Z.",
         "mario kart wii" to "Played on the GameCube layout: the right stick is the C stick and R1 is Z.",
         "punch-out!!" to "The remote is held sideways: B and A punch left and right, X is the Star Punch, and the d-pad dodges.",
-        "xenoblade chronicles" to "Played on the Classic Controller: L1 and R1 are L and R, L2 and R2 are ZL and ZR.",
+        "xenoblade chronicles" to "Played on the Classic Controller: L1 and R1 are L and R, L2 and R2 are ZL and ZR. A place kept on the " +
+            "remote and Nunchuk goes on with them; save in the game and close it from Dolphin's menu, and it starts on the Classic Controller.",
         "metroid prime 3 - corruption" to "$REMOTE Hold R2 and move the right stick to push, pull and twist handles.",
         "super mario galaxy" to "$REMOTE Hold R2 to stand the remote up, and tilt it with the left stick.",
         "super mario galaxy 2" to "$REMOTE Hold R2 to stand the remote up, and tilt it with the left stick.",
@@ -3784,20 +3875,24 @@ object ControlsNote {
     private val retroOwn: Map<String, Map<String, String>> = run {
         val stadium = "Rental Pokémon play as normal. The GB Tower and your own Game Boy Pokémon need a Transfer Pak, which is not set up here."
         val noRumble = "No rumble: its saves are on the Controller Pak, which takes the slot, as on the console."
+        // Its own controls (RetroPack.twinStick), in place of the core's.
+        val twin = "A and B are the console's A and B. Move with the left stick and aim with the right; R2 and L2 are Z, which fires."
         val threeD = "SELECT switches the 3D Control Pad between analog and digital."
         val sun = "R3 and L3 turn the sun up and down."
         mapOf(
             "n64" to mapOf(
                 "killer instinct gold" to "Punches are Y, X and R1 and kicks are B, A and R2, light to hard. On an Xbox controller, " +
                     "punches are X, Y and RB and kicks are A, B and RT.",
-                "diddy kong racing" to "No rumble: its time trial ghosts are kept on the Controller Pak, which takes the slot, as on the console.",
+                "diddy kong racing" to "The Rumble Pak is in, so a time trial ghost lasts until you leave. To keep one, when the game asks for the " +
+                    "Controller Pak: Quick Menu, Core Options, Pak/Controller Options, Player 1 Pak, memory.",
                 "pokemon snap" to "Professor Oak's check of your photos does not work in this emulator yet.",
                 "pokemon stadium" to stadium, "pokemon stadium 2" to stadium,
                 "mario kart 64" to "In split-screen the small course map can look wrong.",
                 "star wars - shadows of the empire" to "The space levels have a plain black sky, without their stars.",
                 "kirby 64 - the crystal shards" to "The health display can lag behind, and can lose its frame when you come back to a kept place.",
             ) + listOf("beetle adventure racing!", "goemon's great adventure", "mystical ninja starring goemon", "nfl blitz 2000",
-                "san francisco rush 2049", "snowboard kids", "turok 2 - seeds of evil").associateWith { noRumble },
+                "san francisco rush 2049", "snowboard kids").associateWith { noRumble } +
+                mapOf("turok - dinosaur hunter" to twin, "turok 2 - seeds of evil" to "$twin $noRumble", "tsumi to batsu - hoshi no keishousha" to twin),
             "nes" to mapOf(
                 "super mario bros. + duck hunt + world class track meet" to "Duck Hunt: touch the screen to shoot; docked, the second pad plays Luigi instead. " +
                     "World Class Track Meet needs the Power Pad mat, which cannot be used here.",
@@ -3819,8 +3914,9 @@ object ControlsNote {
                     "Moving between rooms takes a few seconds in this emulator."),
         )
     }
-    /** Games whose own note takes the place of the core's (Killer Instinct Gold's buttons are its own, RetroPack.n64Remap). */
-    private val ownButtons = setOf("n64" to "killer instinct gold")
+    /** Games whose own note takes the place of the core's (their buttons are their own: RetroPack.n64Remap, RetroPack.twinStick). */
+    private val ownButtons = setOf("n64" to "killer instinct gold", "n64" to "turok - dinosaur hunter", "n64" to "turok 2 - seeds of evil",
+        "n64" to "tsumi to batsu - hoshi no keishousha")
 
     private val doing = mapOf(
         "RetroArch menu" to "opens RetroArch's menu", "Fast-forward (hold)" to "fast-forwards while held",

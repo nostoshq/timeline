@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.0
+
+- **The sharper look is the default.** The 3D consoles are drawn at the largest whole multiple each keeps smooth on a
+  Retroid Pocket Nova, then brought back to the console's own lines for the CRT: the PlayStation at four times its
+  detail, the Nintendo 64 at eight (2560 by 1920, averaged down to 1280 by 960, which smooths every edge), the
+  Dreamcast at four (drawn the compatible way, it stays at twice), and GameCube and Wii at three. Pokemon Snap, which
+  reads its pictures back to check your photos, is drawn at four. A choice made before under **Settings, Picture, 3D
+  consoles: sharper than the console** stays; switch it off for the true picture.
+- **Xenoblade Chronicles keeps your place.** 1.5.0 moved it to the Classic Controller, and a place kept on the remote
+  and Nunchuk stopped on "Connect the Nunchuk". A place kept with an earlier version now goes on with the remote and
+  Nunchuk; once you save in the game and close it from Dolphin's menu, it starts on the Classic Controller.
+- **Nintendo 64 blending.** Every game uses GLideN64's accurate blending, which Blast Corps alone had before (the
+  faster kind for phones lost its banners and logo). On a Retroid Pocket Nova it costs 1 or 2% of the graphics chip.
+- **Rumble for four more Nintendo 64 games.** Perfect Dark, WWF No Mercy, Ken Griffey Jr. and Diddy Kong Racing save
+  on the cartridge and used the Controller Pak only for extras, so they now shake. Diddy Kong Racing's page
+  says how to keep a time trial ghost. Excitebike 64 keeps its pak, which holds its own tracks.
+- **Twin sticks for three shooters.** Turok, Turok 2 and Sin and Punishment, made with walking on the C buttons, move
+  on the left stick and aim with the right, with Z on R2 and L2, as a modern shooter plays. GoldenEye and Perfect Dark
+  keep their usual controls, which start with walking and turning on one stick.
+- **GameCube and Wii rumble.** Dolphin's controls now include each controller's motor, so GameCube games and the Wii
+  Remote shake the controller in your hands.
+
 ## 1.5.0
 
 - **The Game Boy's three screens.** With **Settings, Picture, Handhelds: screen** at As the console, L1 and R1 change a

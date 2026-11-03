@@ -517,11 +517,18 @@ class RetroPackTest {
         assertTrue("a game's own memory card must survive", dockside.contains("reicast_per_content_vmus = \"VMU A1\""))
         // switched back off: the game's own file holds the usual, sharp settings again
         assertEquals(files.getValue("SwanStation/SwanStation.opt"), files.getValue("SwanStation/Glasswing (USA).opt"))
-        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("1280x960"))
+        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("2560x1920"))
     }
 
-    @Test fun theDefaultLookIsTheTruePicture() {
-        val files = RetroPack.files(Look(), p)
+    @Test fun theDefaultLookIsTheSharperOne() {
+        assertTrue(Look().sharp)
+        val sharp = RetroPack.files(Look(), p)
+        assertTrue(sharp.getValue("SwanStation/SwanStation.opt").let { it.contains("swanstation_GPU_ResolutionScale = \"4\"") && it.contains("swanstation_GPU_PGXPEnable = \"true\"") })
+        assertTrue(sharp.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").let { it.contains("mupen64plus-43screensize = \"2560x1920\"") && it.contains("mupen64plus-EnableLegacyBlending = \"False\"") })
+    }
+
+    @Test fun theTruePicture() {
+        val files = RetroPack.files(Look(sharp = false), p)
         val preset = files.getValue("FinalBurn Neo/FinalBurn Neo.slangp")      // arcade: RGB, so the beam, the set's colour and the tube
         assertTrue(preset.startsWith("shaders = \"3\"\n"))
         assertTrue(preset.contains("shader0 = \"/storage/emulated/0/Timeline/retroarch/shaders/shaders_slang/subframe-bfi/shaders/crt-beam-simulator.slang\""))
@@ -545,12 +552,12 @@ class RetroPackTest {
         val beetle = files.getValue("Beetle PSX HW/Beetle PSX HW.opt")
         assertTrue(beetle.contains("beetle_psx_hw_internal_resolution = \"1x(native)\"") && beetle.contains("beetle_psx_hw_dither_mode = \"1x(native)\""))
         assertTrue(files.getValue("Flycast/Flycast.opt").let { it.contains("reicast_internal_resolution = \"640x480\"") && it.contains("reicast_anisotropic_filtering = \"off\"") })
-        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").let { it.contains("mupen64plus-43screensize = \"1280x960\"") && it.contains("mupen64plus-BilinearMode = \"3point\"") })
+        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").let { it.contains("mupen64plus-43screensize = \"2560x1920\"") && it.contains("mupen64plus-BilinearMode = \"3point\"") })
         assertTrue(files.getValue("Beetle Saturn/Beetle Saturn.opt").contains("beetle_saturn_deinterlacer = \"bob_offset\""))
         // the sharper look: as before
         val sharp = RetroPack.files(Look(sharp = true), p)
         assertTrue(sharp.getValue("SwanStation/SwanStation.opt").let { it.contains("swanstation_GPU_ResolutionScale = \"4\"") && it.contains("swanstation_GPU_PGXPEnable = \"true\"") })
-        assertTrue(sharp.getValue("Flycast/Flycast.opt").contains("reicast_internal_resolution = \"1280x960\""))
+        assertTrue(sharp.getValue("Flycast/Flycast.opt").contains("reicast_internal_resolution = \"2560x1920\""))
         assertTrue(sharp.getValue("Beetle PSX HW/Beetle PSX HW.opt").contains("beetle_psx_hw_internal_resolution = \"4x\""))
         // the television consoles' own settings
         assertTrue(files.getValue("Nestopia/Nestopia.opt").contains("nestopia_palette = \"cxa2025as\""))
@@ -1076,7 +1083,7 @@ class ExtrasTest {
     }
 
     @Test fun dolphinIsSetUpThroughItsGameSettingsFiles() {
-        val docs = DolphinPack.docs(Look(), "Android/1/Retroid Pocket Controller")
+        val docs = DolphinPack.docs(Look(sharp = false), "Android/1/Retroid Pocket Controller")
         val byPath = docs.associateBy { it.path }
         // the profiles come before the files that name them
         assertTrue(docs.indexOfFirst { it.path == "Config/Profiles/GCPad/Timeline.ini" } < docs.indexOfFirst { it.path == "GameSettings/G.ini" })
@@ -1089,11 +1096,11 @@ class ExtrasTest {
         // component: the sharp progressive picture; composite: the game's own blending against flicker, and its dither
         assertEquals("True", Ini.value(g, "Video_Enhancements", "DisableCopyFilter"))
         assertEquals("True", Ini.value(g, "Video_Enhancements", "ForceTrueColor"))
-        val gc = DolphinPack.docs(Look(signal = mapOf("gcwii" to "Composite")), "Android/1/Retroid Pocket Controller").single { it.path == "GameSettings/G.ini" }.text!!
+        val gc = DolphinPack.docs(Look(signal = mapOf("gcwii" to "Composite"), sharp = false), "Android/1/Retroid Pocket Controller").single { it.path == "GameSettings/G.ini" }.text!!
         assertEquals("False", Ini.value(gc, "Video_Enhancements", "DisableCopyFilter"))
         assertEquals("False", Ini.value(gc, "Video_Enhancements", "ForceTrueColor"))
         val gs = DolphinPack.docs(Look(sharp = true, signal = mapOf("gcwii" to "Component")), "Android/1/Retroid Pocket Controller").single { it.path == "GameSettings/G.ini" }.text!!
-        assertEquals("2", Ini.value(gs, "Video_Settings", "InternalResolution")); assertEquals("True", Ini.value(gs, "Core", "ProgressiveScan"))
+        assertEquals("3", Ini.value(gs, "Video_Settings", "InternalResolution")); assertEquals("True", Ini.value(gs, "Core", "ProgressiveScan"))
         assertEquals("True", Ini.value(gs, "Video_Enhancements", "DisableCopyFilter"))
         assertEquals("2", Ini.value(g, "Video_Settings", "ShaderCompilationMode"))
         assertEquals("True", Ini.value(g, "Video_Settings", "WaitForShadersBeforeStarting"))
@@ -1201,7 +1208,7 @@ class ExtrasTest {
         assertFalse(files.getValue("SwanStation/SwanStation.opt").contains("PGXPCPU = \"true\""))   // not for every game
         val mm = files.getValue("Mupen64Plus-Next/Legend of Zelda, The - Majora's Mask (USA).opt")
         assertTrue(mm.contains("mupen64plus-EnableCopyAuxToRDRAM = \"True\"") && mm.contains("mupen64plus-43screensize"))
-        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_anisotropic_filtering = \"off\""))
+        assertTrue(files.getValue("Flycast/Flycast.opt").contains("reicast_anisotropic_filtering = \"16\""))
         // a game run lighter keeps its fix
         val light = RetroPack.files(Look(lighter = mapOf("psx/Tekken 3 (USA)" to true)), RetroPack.Paths("/h", "pkg", "/d", "/a"))
         assertTrue(light.getValue("SwanStation/Tekken 3 (USA).opt").contains("swanstation_GPU_PGXPCPU = \"true\""))
@@ -1756,7 +1763,7 @@ class ExtrasTest {
         assertNull(Crt3d.slang(gdv.replace("OriginalSize.y >= 400.0", "OriginalSize.y > 400.0")))   // not the file it was written for
         assertNull(Crt3d.slang(gdv.replace("vec2 OGL2Pos = pos * SourceSize.xy;", "vec2 OGL2Pos = pos;")))
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
-        val off = Look(motion3d = "Off")
+        val off = Look(motion3d = "Off", sharp = false)
         val files = RetroPack.files(off, p)
         // the true picture: PlayStation and Dreamcast at their own size, nothing to bring down; composite, the set's
         // colour, then GDV, with 480-line pictures drawn without gaps
@@ -1776,17 +1783,21 @@ class ExtrasTest {
         assertTrue(tvdc.getValue("Flycast/Flycast.opt").contains("reicast_cable_type = \"TV (Composite)\""))
         val saturn = files.getValue("Beetle Saturn/Beetle Saturn.slangp")
         assertTrue(saturn.contains("shaders = \"6\"") && saturn.contains("alias0 = \"PrePass0\"") && saturn.contains("ntsc-pass3.slang") && saturn.contains("cust_artifacting = \"1.0\"") && saturn.contains("auto_res = \"1.0\""))
-        // Nintendo 64: four times its detail in both looks, brought back to 320 x 240 both ways (the GLSL passes, under OpenGL)
+        // Nintendo 64: eight times its detail in both looks, brought back to 320 x 240 both ways (the GLSL passes, under OpenGL)
         val n64 = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp")
-        assertTrue(n64.contains("shaders = \"5\"") && n64.contains("shader0 = \"/h/shaders/timeline/stock.glsl\"") && n64.contains("scale_x0 = \"0.5\"") && n64.contains("scale_y1 = \"0.5\"") &&
-            n64.contains("shader2 = \"/h/shaders/timeline/timeline-signal.glsl\"") && n64.contains("shader3 = \"/h/shaders/timeline/timeline-colour.glsl\"") &&
-            n64.contains("shader4 = \"/h/shaders/timeline/crt-gdv-3d.glsl\"") && n64.contains("gamma_out = \"2.6\""))
+        assertTrue(n64.contains("shaders = \"6\"") && n64.contains("shader0 = \"/h/shaders/timeline/stock.glsl\"") && n64.contains("scale_x0 = \"0.5\"") && n64.contains("scale_y2 = \"0.5\"") &&
+            n64.contains("shader3 = \"/h/shaders/timeline/timeline-signal.glsl\"") && n64.contains("shader4 = \"/h/shaders/timeline/timeline-colour.glsl\"") &&
+            n64.contains("shader5 = \"/h/shaders/timeline/crt-gdv-3d.glsl\"") && n64.contains("gamma_out = \"2.6\""))
         // the sharper look: four times, PlayStation brought back to its lines only; 480 lines on a television still blend
         val sharp = RetroPack.files(off.copy(sharp = true), p)
         val spsx = sharp.getValue("SwanStation/SwanStation.slangp")
         assertTrue(spsx.contains("shaders = \"5\"") && spsx.contains("scale_x0 = \"1.0\"") && spsx.contains("scale_y1 = \"0.5\"") && spsx.contains("gdv_hires = \"400.0\""))
         assertTrue(RetroPack.files(off.copy(sharp = true, signal = mapOf("psx" to "RGB")), p).getValue("SwanStation/SwanStation.slangp").contains("gdv_hires = \"400.0\""))
-        assertTrue(sharp.getValue("Flycast/Flycast.slangp").contains("shaders = \"3\""))
+        // Dreamcast at four times: two halvings of the rows (1920 to 480), one of the columns (2560 to 1280)
+        assertTrue(sharp.getValue("Flycast/Flycast.slangp").let { it.contains("shaders = \"4\"") && it.contains("scale_x0 = \"0.5\"") && it.contains("scale_x1 = \"1.0\"") && it.contains("scale_y1 = \"0.5\"") })
+        // drawn the compatible way it stays at twice, with its one halving
+        val compat = RetroPack.files(off.copy(sharp = true, compatible = true), p)
+        assertTrue(compat.getValue("Flycast/Flycast.opt").contains("reicast_internal_resolution = \"1280x960\"") && compat.getValue("Flycast/Flycast.glslp").contains("shaders = \"3\""))
         // PlayStation drawn in software: its own lines already
         assertTrue(RetroPack.files(off.copy(compatible = true, sharp = true), p).getValue("SwanStation/SwanStation.slangp").contains("shaders = \"3\""))
         // a game run lighter has its own preset without halvings: Nintendo 64 in either look, PlayStation in the sharper one
@@ -2042,7 +2053,7 @@ class ExtrasTest {
 
     @Test fun dreamcastIsDrawnWithoutTheBeam() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
-        val files = RetroPack.files(Look(), p)
+        val files = RetroPack.files(Look(sharp = false), p)
         val dc = files.getValue("Flycast/Flycast.slangp")
         assertTrue(dc.startsWith("shaders = \"2\"") && !dc.contains("beam.slang") && !dc.contains("beam-simulator") && !dc.contains("GAIN_VS_BLUR"))
         assertTrue(files.getValue("Flycast/Flycast.cfg").contains("video_shader_subframes = \"1\""))
@@ -2153,7 +2164,7 @@ class ExtrasTest {
 
     @Test fun fourCanPlayThePlayStationGamesMadeForItAndControllersComeBackToTheirOwnNumber() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
-        val files = RetroPack.files(Look(), p)
+        val files = RetroPack.files(Look(sharp = false), p)
         assertTrue(files.getValue("SwanStation/CTR - Crash Team Racing (USA).opt").contains("swanstation_ControllerPorts_MultitapMode = \"Port1Only\""))
         assertTrue(files.getValue("Beetle PSX HW/Nickelodeon Rugrats - Search for Reptar (USA).opt").contains("beetle_psx_hw_enable_multitap_port1 = \"enabled\""))
         // the game's own file carries the rest of the core's settings too
@@ -2309,7 +2320,7 @@ class ExtrasTest {
 
     @Test fun theBeamRunsOnTheThreeDConsolesDrawnWithVulkan() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
-        val files = RetroPack.files(Look(), p)
+        val files = RetroPack.files(Look(sharp = false), p)
         val psx = files.getValue("SwanStation/SwanStation.slangp")
         assertTrue(psx.contains("shaders = \"4\"") && psx.contains("shader0 = \"/h/shaders/shaders_slang/subframe-bfi/shaders/crt-beam-simulator.slang\"".replace("/h/shaders/shaders_slang", p.slang)))
         assertTrue(psx.contains("shader1 = \"/h/shaders/timeline/timeline-signal.slang\"") && psx.contains("shader3 = \"/h/shaders/timeline/crt-gdv-3d.slang\"") && psx.contains("SCAN_DIRECTION"))
@@ -2325,7 +2336,7 @@ class ExtrasTest {
         val n64 = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg")
         assertTrue(n64.contains("video_black_frame_insertion = \"1\"") && n64.contains("video_shader_subframes = \"1\"") && n64.contains("video_driver = \"gl\""))
         val opt = files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt")
-        assertTrue(opt.contains("mupen64plus-rdp-plugin = \"gliden64\"") && opt.contains("mupen64plus-rsp-plugin = \"hle\"") && opt.contains("1280x960"))
+        assertTrue(opt.contains("mupen64plus-rdp-plugin = \"gliden64\"") && opt.contains("mupen64plus-rsp-plugin = \"hle\"") && opt.contains("2560x1920"))
         assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp").contains("crt-gdv-3d.glsl"))
         assertFalse(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.slangp").contains("-beam"))
         assertTrue(RetroPack.files(Look(motion3d = "Off"), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.cfg").contains("video_black_frame_insertion = \"0\""))
@@ -2382,6 +2393,16 @@ class ExtrasTest {
             Ini.value(DolphinPack.wiiRemote(listOf("A/1", "B/2"), DolphinPack.Hold.CLASSIC), "Profile", "Classic/Buttons/ZL"))
     }
 
+    @Test fun aPlaceMadeOnTheNunchukKeepsIt() {
+        assertTrue("SX4E01" in DolphinPack.nunchukFirst)
+        assertFalse("RMGE01" in DolphinPack.nunchukFirst || "R7PE01" in DolphinPack.nunchukFirst)
+        val dev = "Android/1/Retroid Pocket Controller"
+        fun controls(look: Look) = DolphinPack.forPorts(look, listOf(listOf(dev))).filter { it.path == "GameSettings/SX4E01.ini" }
+            .mapNotNull { it.set["Controls"]?.get("WiimoteProfile1") }.single()
+        assertEquals("Timeline classic", controls(Look()))
+        assertEquals(DolphinPack.PROFILE, controls(Look(keptOnNunchuk = setOf("SX4E01"))))
+    }
+
     @Test fun dolphinGameFixesAndNotes() {
         val docs = DolphinPack.docs(Look(), "Android/1/Retroid Pocket Controller")
         fun fix(id: String, section: String, key: String) = docs.filter { it.path == "GameSettings/$id.ini" }.firstNotNullOfOrNull { it.set[section]?.get(key) }
@@ -2407,7 +2428,7 @@ class ExtrasTest {
         val out = RetroPack.files(Look(), p)
         val star = out.getValue("Mupen64Plus-Next/Star Fox 64 (USA) (Rev 1).opt")
         for (port in 1..4) assertTrue(star.contains("mupen64plus-pak$port = \"rumble\""))
-        assertTrue(star.contains("mupen64plus-43screensize = \"1280x960\""))      // every usual setting comes with it
+        assertTrue(star.contains("mupen64plus-43screensize = \"2560x1920\""))      // every usual setting comes with it
         // a game that saves to the Controller Pak keeps it
         assertFalse(out.containsKey("Mupen64Plus-Next/Turok 2 - Seeds of Evil (USA) (Rev 1).opt"))
         val majora = out.getValue("Mupen64Plus-Next/Legend of Zelda, The - Majora's Mask (USA).opt")
@@ -2430,7 +2451,7 @@ class ExtrasTest {
         assertTrue(ControlsNote.of("n64", "pokemon snap", "ra:mupen64plus_next_gles3", true, null).contains("Professor Oak"))
         // No rumble only where the Controller Pak takes the slot: never for a game that had no rumble at all
         assertTrue(ControlsNote.of("n64", "turok 2 - seeds of evil", "ra:mupen64plus_next_gles3", true, null).contains("No rumble"))
-        assertTrue(ControlsNote.of("n64", "diddy kong racing", "ra:mupen64plus_next_gles3", true, null).contains("time trial ghosts"))
+        assertTrue(ControlsNote.of("n64", "diddy kong racing", "ra:mupen64plus_next_gles3", true, null).contains("time trial ghost"))
         for (base in listOf("doom 64", "turok - dinosaur hunter"))
             assertFalse(base, ControlsNote.of("n64", base, "ra:mupen64plus_next_gles3", true, null).contains("rumble"))
         assertTrue(ControlsNote.of("nds", "mario & luigi - bowser's inside story", "ra:melondsds", true, null).contains("giant battles, hold L2"))
@@ -2441,6 +2462,62 @@ class ExtrasTest {
         // no note says it louder than it is
         for (s in listOf("n64", "nes", "psx", "arcade", "saturn", "dreamcast", "gbc", "gba", "nds"))
             assertFalse(ControlsNote.of(s, "x", "ra:x", true, null).contains("!"))
+    }
+    @Test fun cartridgeSavingGamesTakeTheRumblePak() {
+        val out = RetroPack.files(Look(), RetroPack.Paths("/h", "pkg", "/d", "/a"))
+        for (stem in listOf("Perfect Dark (USA) (Rev 1)", "WWF No Mercy (USA) (Rev 1)", "Major League Baseball Featuring Ken Griffey Jr. (USA)",
+                "Diddy Kong Racing (USA) (En,Fr) (Rev 1)"))
+            assertTrue(stem, out.getValue("Mupen64Plus-Next/$stem.opt").contains("mupen64plus-pak1 = \"rumble\""))
+        assertNull(out["Mupen64Plus-Next/Excitebike 64 (USA) (Rev 1).opt"])           // its own tracks are on the Controller Pak
+        assertTrue(ControlsNote.of("n64", "diddy kong racing", "ra:mupen64plus_next_gles3", true, null).contains("Player 1 Pak, memory"))
+    }
+    @Test fun dolphinRumblesTheControllersOwnMotor() {
+        val docs = DolphinPack.docs(Look(), listOf("Android/1/Retroid Pocket Controller", "Android/2/Xbox Wireless Controller")).associateBy { it.path }
+        assertEquals("`Motor 0`", Ini.value(docs.getValue("Config/Profiles/GCPad/Timeline.ini").text!!, "Profile", "Rumble/Motor"))
+        assertEquals("`Motor 0`", Ini.value(docs.getValue("Config/Profiles/Wiimote/Timeline classic.ini").text!!, "Profile", "Rumble/Motor"))
+        assertEquals("`Motor 0`", Ini.value(docs.getValue("Config/Profiles/GCPad/Timeline 2.ini").text!!, "Profile", "Rumble/Motor"))
+        // several controllers to a port: each one's motor
+        val both = DolphinPack.gamePad(listOf("Android/1/Retroid Pocket Controller", "Android/2/Xbox Wireless Controller"))
+        assertEquals("`Android/1/Retroid Pocket Controller:Motor 0` | `Android/2/Xbox Wireless Controller:Motor 0`", Ini.value(both, "Profile", "Rumble/Motor"))
+    }
+    @Test fun nintendo64IsDrawnAtEightTimesAndBroughtBackToItsLines() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        // the sharper look: three halvings of the rows (1920 to 240), one of the columns (2560 to 1280)
+        val sharp = RetroPack.files(Look(), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp")
+        for (line in listOf("scale_x0 = \"0.5\"", "scale_y0 = \"0.5\"", "scale_x1 = \"1.0\"", "scale_y1 = \"0.5\"", "scale_x2 = \"1.0\"", "scale_y2 = \"0.5\""))
+            assertTrue(line, sharp.contains(line))
+        assertFalse(sharp.contains("scale_x3 = "))
+        // the true picture: both ways, to 320 x 240
+        val truth = RetroPack.files(Look(sharp = false), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp")
+        for (i in 0..2) assertTrue(truth.contains("scale_x$i = \"0.5\"") && truth.contains("scale_y$i = \"0.5\""))
+        // a game run lighter has nothing to bring down
+        val light = RetroPack.files(Look(lighter = mapOf("n64/Bristle's Rough Night (USA)" to true)), p).getValue("Mupen64Plus-Next/Bristle's Rough Night (USA).glslp")
+        assertFalse(light.contains("scale_y0 = \"0.5\""))
+        // Pokemon Snap at four times: its own options and presets with two row halvings
+        val snap = "Pokemon Snap (USA)"
+        val files = RetroPack.files(Look(), p)
+        assertTrue(files.getValue("Mupen64Plus-Next/$snap.opt").contains("mupen64plus-43screensize = \"1280x960\""))
+        val four = files.getValue("Mupen64Plus-Next/$snap.glslp")
+        for (line in listOf("scale_x0 = \"1.0\"", "scale_y0 = \"0.5\"", "scale_x1 = \"1.0\"", "scale_y1 = \"0.5\"")) assertTrue(line, four.contains(line))
+        assertFalse(four.contains("scale_y2 = \"0.5\""))
+        val lighter = RetroPack.files(Look(lighter = mapOf("n64/$snap" to true)), p)
+        assertTrue(lighter.getValue("Mupen64Plus-Next/$snap.opt").contains("mupen64plus-43screensize = \"320x240\""))
+        assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("mupen64plus-43screensize = \"2560x1920\""))
+    }
+
+    @Test fun shootersMadeForTheCButtonsGetTwinSticks() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val out = RetroPack.files(Look(), p)
+        for (stem in listOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)", "Tsumi to Batsu - Hoshi no Keishousha (Japan)")) {
+            val rmp = out.getValue("remaps/Mupen64Plus-Next/$stem.rmp")
+            for (player in 1..4) for (line in listOf("input_player${player}_stk_l_x+ = \"20\"", "input_player${player}_stk_l_y- = \"23\"",
+                    "input_player${player}_stk_r_x- = \"17\"", "input_player${player}_stk_r_y+ = \"18\"", "input_player${player}_btn_r2 = \"12\""))
+                assertTrue(line, rmp.contains(line + "\n"))
+            assertTrue(rmp.startsWith(RetroPack.n64Buttons()))         // A and B stay where the core's own remap puts them
+        }
+        assertNull(out["remaps/Mupen64Plus-Next/GoldenEye 007 (USA).rmp"])
+        assertTrue(ControlsNote.of("n64", "turok - dinosaur hunter", "ra:mupen64plus_next_gles3", true, null).startsWith("A and B are the console's A and B. Move with the left stick"))
+        assertTrue(ControlsNote.of("n64", "turok 2 - seeds of evil", "ra:mupen64plus_next_gles3", true, null).contains("No rumble"))
     }
 
     @Test fun gamesWithNeedsOfTheirOwnGetTheirFiles() {

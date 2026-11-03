@@ -1010,6 +1010,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             prefs.removeNow(listOf("ra.sharp", "ra.saturation", "ra.handheld", "ra.white") + RetroPack.signals.keys.map { "ra.signal.$it" })
             prefs.putNow("picture.true", RetroPack.TRUE_PICTURE)
         }
+        // Places kept before this version first ran were made before Xenoblade's hold changed (DolphinPack.nunchukFirst).
+        if (prefs.long("hold.since", 0L) == 0L) prefs.put("hold.since", System.currentTimeMillis())
         SoundService.sync(ctx)
         forgetEarlyGlFallbacks()
         Installs.onResult = ::installAnswered
@@ -1103,7 +1105,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         motion3d = prefs.str("ra.motion3d", "Beam simulator").takeIf { it in RetroPack.motionChoices } ?: "Beam simulator",
         handheld = prefs.str("ra.handheld", RetroPack.TRUE_LCD).takeIf { it in RetroPack.handheldChoices } ?: RetroPack.TRUE_LCD,
         transparency = prefs.bool("ra.transparency", true),
-        integer = prefs.bool("ra.integer", true), sharp = prefs.bool("ra.sharp", false), saturation = prefs.int("ra.saturation", 100),
+        integer = prefs.bool("ra.integer", true), sharp = prefs.bool("ra.sharp", true), saturation = prefs.int("ra.saturation", 100),
         white = prefs.str("ra.white", RetroPack.whiteChoices.first()).takeIf { it in RetroPack.whiteChoices } ?: RetroPack.whiteChoices.first(),
         crt3d = prefs.bool("ra.crt3d", true), reconnectByName = padNamesDiffer(),
         signal = RetroPack.signals.keys.mapNotNull { g -> prefs.str("ra.signal.$g").takeIf { it.isNotEmpty() }?.let { g to it } }.toMap(),
@@ -1133,6 +1135,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         lighterCodes = prefs.strings("light.ever").filter { it.startsWith("gc/") || it.startsWith("wii/") }
             .filter { prefs.bool("light:$it", false) || it in prefs.strings("light.undo") }
             .mapNotNull { key -> find(key)?.let(::codeOf)?.let { it to prefs.bool("light:$key", false) } }.toMap(),
+        keptOnNunchuk = prefs.strings("hold.kept").mapNotNull { key -> find(key)?.let(::codeOf) }.toSet(),
         dolphinGlCodes = prefs.strings("dolgl.ever").filter { drawsWithGl(it) || it in prefs.strings("dolgl.undo") }
             .mapNotNull { key -> find(key)?.let(::codeOf)?.let { it to drawsWithGl(key) } }
             .groupBy({ it.first }, { it.second }).mapValues { (_, v) -> v.any { it } },
@@ -1229,7 +1232,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
      * Run lighter changes something: Nintendo 64 is drawn at four times its detail in either look, the others only in the
      * sharper one (in the true picture they are at their own resolution already).
      */
-    fun lighterHelps(g: Game): Boolean = canRunLighter(g) && (g.system == "n64" || prefs.bool("ra.sharp", false))
+    fun lighterHelps(g: Game): Boolean = canRunLighter(g) && (g.system == "n64" || prefs.bool("ra.sharp", true))
 
     fun canRunLighter(g: Game): Boolean {
         if (g.system !in RetroPack.canRunLighter) return false
@@ -3532,6 +3535,14 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             DolphinResume.file(ctx, g.key).isFile && DolphinResume.place(ctx, g.key)
         if (!placed && !keepTemp) { DolphinResume.clear(ctx); prefs.put("dolphin.pending", "") }
         prefs.put("dolphin.placed", if (placed || keepTemp) g.key else "")
+        // A Wii game whose hold took the Nunchuk away keeps it while it resumes from a place made on it, and takes its own
+        // hold again once it starts afresh (DolphinPack.nunchukFirst). Read by the settings written next.
+        if (!testStartOf(g.key) && codeOf(g)?.let { it in DolphinPack.nunchukFirst } == true) {
+            val kept = prefs.strings("hold.kept")
+            val old = DolphinResume.file(ctx, g.key).let { it.isFile && it.lastModified() < prefs.long("hold.since", 0L) }
+            val onNunchuk = (placed || keepTemp) && (g.key in kept || (placed && old))
+            if (onNunchuk != g.key in kept) prefs.putStrings("hold.kept", if (onNunchuk) kept + g.key else kept - g.key)
+        }
     }
 
     /**

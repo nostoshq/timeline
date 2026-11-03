@@ -1243,11 +1243,12 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                     "On a television they stand upright in the middle of the screen."),
             app.toggle("Whole-number scaling", "ra.integer", true,
                 "Every game pixel becomes the same number of screen pixels. 240-line consoles fill this panel exactly at four times."),
-            app.toggle("3D consoles: sharper than the console", "ra.sharp", false,
-                "Off is the true picture: PlayStation and Dreamcast at their own resolution, PlayStation with its dithering and wobble. " +
-                    "On draws PlayStation and Dreamcast at 960 lines with clean edges and no wobble, GameCube and Wii at twice their " +
-                    "detail, and keeps Nintendo 64's extra detail across. Either way, 480-line pictures sent to a television show without gaps " +
-                    "between their lines, as the set blended them; the Dreamcast's VGA box keeps its lines, like a monitor."),
+            app.toggle("3D consoles: sharper than the console", "ra.sharp", true,
+                "Off is the true picture: PlayStation, Dreamcast, GameCube and Wii at their own resolution, PlayStation with its dithering " +
+                    "and wobble. On draws more detail than the console had, then brings it back to the console's lines: PlayStation at four " +
+                    "times with clean edges and no wobble, Dreamcast at four, GameCube and Wii at three. Nintendo 64 is drawn at eight times " +
+                    "either way (Pokémon Snap at four). 480-line pictures sent to a television show without gaps between their lines, as the " +
+                    "set blended them; the Dreamcast's VGA box keeps its lines, like a monitor."),
             app.toggle("3D consoles: CRT look", "ra.crt3d", true,
                 "PlayStation, Saturn, Nintendo 64, Dreamcast, GameCube and Wii through the same CRT as the television consoles, with scanlines at each " +
                     "console's own number of lines and the extra detail kept in them. Off draws them clean."),
