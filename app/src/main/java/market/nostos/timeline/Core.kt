@@ -2921,6 +2921,10 @@ object RetroPack {
             "Blast Corps (USA) (Rev 1)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),
             "Mario Tennis (USA)" to mapOf("mupen64plus-EnableCopyAuxToRDRAM" to "True"),    // the last match's names left on the scoreboard (#2952)
             KI_GOLD to mapOf("mupen64plus-alt-map" to "True"),                               // every C button on a button of its own
+            // Banjo-Tooie's characters flickered every few seconds with GLideN64's frame buffer emulation; color copies off,
+            // depth copies off and no frame duplication did not cure it, emulation off did. The picture keeps its size and
+            // place and fills the thin border.
+            "Banjo-Tooie (USA)" to mapOf("mupen64plus-EnableFBEmulation" to "False"),
             // The console's processor run faster, for the two shooters' slowdown. On a Retroid Pocket Nova, from places in
             // each game, the same 15 s of turning each time, frames counted from each game's own frame counter
             // (GoldenEye's frametiming.c, Perfect Dark's g_Vars): GoldenEye 39.5 a second at the usual speed, 51.5 at twice,
@@ -2929,6 +2933,11 @@ object RetroPack {
             // on the screen at these speeds.
             "GoldenEye 007 (USA)" to mapOf("mupen64plus-CountPerOpDenomPot" to "2"),
             "Perfect Dark (USA) (Rev 1)" to mapOf("mupen64plus-CountPerOpDenomPot" to "1"),
+            // Jet Force Gemini: from the same place in its first level, 15 s of running counted from the console's own video
+            // manager, 26.5 and 27.5 pictures a second at the usual speed, 28.9 at twice and 30.0, its own most, at four
+            // times, both runs, still 60 refreshes a second. Turok 2, Conker and Banjo-Tooie gained little or nothing
+            // (already at their own most), so they keep the console's speed.
+            "Jet Force Gemini (USA)" to mapOf("mupen64plus-CountPerOpDenomPot" to "2"),
         )
         val shake = (1..4).associate { "mupen64plus-pak$it" to "rumble" }
         (rumbleGames + own.keys).associateWith { (if (it in rumbleGames) shake else emptyMap()) + own[it].orEmpty() }

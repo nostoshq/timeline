@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.1
+
+- **Banjo-Tooie without flickering characters.** Its character models flickered every few seconds with GLideN64's
+  frame buffer emulation, which is now off for this game only. The picture keeps its size and place and fills the
+  thin border around it.
+- **Less slowdown in Jet Force Gemini.** The console's processor runs at four times its speed for it. From the same
+  15 seconds of play it went from 26.5 pictures a second to 30, the most the game draws. Turok 2, Conker and
+  Banjo-Tooie gained little or nothing, so they keep the console's speed.
+
 ## 1.8.0
 
 - **Doom 64 on two sticks.** The left stick walks and strafes and the right stick turns, as a modern shooter plays.
