@@ -116,7 +116,8 @@ object Emulators {
             // own storage but not on a memory card ("Could not find ROM"), and an address without the folder in it is
             // refused too. melonDS reads "uri" before "PATH", and "PATH" wins if both are sent, so only one is.
             action = "me.magnum.melonds.LAUNCH_ROM", extras = mapOf("uri" to "%ROMSAF%"),
-            setup = "Inside it: Set ROM Directory and pick ROMs/nds. To find the SD card in Android's folder picker, open the menu at its top left."),
+            setup = "Inside it: Set ROM Directory and pick ROMs/nds. To find the SD card in Android's folder picker, open the menu at its top left. " +
+                "Then in its Settings, Input, Key mapping, set Swap screens to R2: on two screens R2 then moves the touch screen onto the attachment."),
         Emu("drastic", "DraStic", listOf("com.dsemu.drastic/.DraSticActivity"), clear = true, data = "%ROMSAF%", setup = FOLDER),
         Emu("armsx2", "ARMSX2", listOf(
             "come.nanodata.armsx2/com.armsx2.MainActivity", "com.armsx2/.MainActivity", "com.armsx2.nightly/com.armsx2.MainActivity",
@@ -1867,11 +1868,24 @@ object Players {
     /** Dolphin's name for an Android controller, as it writes it ("Android/1/Retroid Pocket Controller"). */
     fun dolphinName(p: Pad): String = "Android/${p.number}/${p.name}"
 
-    /** A television: a connected display at least 1280 wide and 16:10 or wider. The DS attachment is not that shape. */
+    /**
+     * A television by its shape: a connected display at least 1280 wide and 16:10 or wider. The dual-screen attachment
+     * is that shape too (1920 x 1080, "DP Screen", the same name a television through the dock has), so it is told
+     * apart by its touch panel ([isScreenTouch]); Store.tvDisplays leaves it out.
+     */
     fun isTv(width: Int, height: Int): Boolean {
         val w = maxOf(width, height); val h = minOf(width, height)
         return h > 0 && w >= 1280 && w.toFloat() / h >= 1.55f
     }
+
+    /**
+     * A touch panel plugged in from outside ([external], Android's own flag): the dual-screen attachment's
+     * ("RetroidPocket RDS Touchscreen", USB 222a:0001, seen on a Nova), which Android ties to the attachment's display.
+     * A television has none. [sources] is InputDevice.getSources; a mouse or touchpad is not one.
+     */
+    fun isScreenTouch(sources: Int, external: Boolean, name: String = ""): Boolean =
+        (external && sources and TOUCHSCREEN == TOUCHSCREEN) || name.contains("RDS Touchscreen")
+    private const val TOUCHSCREEN = 0x1002          // InputDevice.SOURCE_TOUCHSCREEN
 
     /** Wired or not, by the kernel's list of input devices: bus 0003 is USB, 0005 Bluetooth. Name to wired. */
     fun buses(procBusInputDevices: String): Map<String, Boolean> {
@@ -1948,6 +1962,7 @@ data class Look(
     val signal: Map<String, String> = emptyMap(),      // per console group (RetroPack.signals): the signal it reached the screen by, where changed
     val n64Modern: Boolean = true,                     // the N64 shooters on two sticks (RetroPack.twinStick, RetroPack.dualStick)
     val onePlayer: Boolean = true,                     // no second player's controller connected as the game starts (Players.onePlayer)
+    val dsFirst: String = "By game",                   // the DS arrangement a game starts in (RetroPack.dsChoices)
 ) {
     /** The signal a console group reaches the screen by: the one chosen, else the usual one in an American home. */
     fun signalOf(group: String): String = signal[group]?.takeIf { it in RetroPack.signals[group].orEmpty() } ?: RetroPack.signals[group]?.first() ?: "RGB"
@@ -2125,6 +2140,15 @@ object RetroPack {
     }
     val motionChoices = listOf("Beam simulator", "Black frames", "Off")
     val lagChoices = listOf("Preemptive frames", "Run-ahead", "Off")
+
+    /** The arrangement a DS game starts in, in RetroArch. By game: the top screen large, or the touch screen large or both stacked for the games played that way. */
+    val dsChoices = listOf("By game", "Top screen large", "Touch screen large", "Both stacked", "Top screen alone", "Touch screen alone")
+    private val dsLayoutOf = mapOf("Top screen large" to "largescreen-top", "Touch screen large" to "largescreen-bottom",
+        "Both stacked" to "top-bottom", "Top screen alone" to "top", "Touch screen alone" to "bottom")
+
+    /** The five arrangements in the order R2 steps through them, starting from [first] (one of [dsChoices]) and then the usual order. */
+    fun dsOrder(first: String, usual: List<String> = DS_LAYOUTS): List<String> =
+        dsLayoutOf[first]?.let { f -> listOf(f) + DS_LAYOUTS.filter { it != f } } ?: usual
     /** Cores whose save states are not repeatable (their info file says "basic", not "deterministic"): RetroArch cannot
      *  re-run a frame from them, so neither kind of lag reduction is asked of them. */
     val noLag = setOf("MAME 2003-Plus")
@@ -3338,11 +3362,12 @@ object RetroPack {
         // large with the touch screen small beside it, the reverse, the top screen alone (exactly five times its size on
         // this panel), the touch screen alone, and both stacked. Whole-number scaling is off so each one fills the
         // panel, with a filter that keeps pixels even and sharp at any size.
-        out["melonDS DS/melonDS DS.opt"] = cfg(melonDs(DS_LAYOUTS))
+        // Settings, Emulators, "Nintendo DS: first arrangement" puts another one first for every game (dsOrder).
+        out["melonDS DS/melonDS DS.opt"] = cfg(melonDs(dsOrder(look.dsFirst)))
         // Games of their own: the touch screen large first, or both screens at once first; the same five either way.
-        for (stem in dsTouchFirst) out["melonDS DS/$stem.opt"] = cfg(melonDs(listOf("largescreen-bottom", "largescreen-top", "bottom", "top", "top-bottom")))
-        for (stem in dsBothScreens) out["melonDS DS/$stem.opt"] = cfg(melonDs(listOf("top-bottom", "largescreen-top", "largescreen-bottom", "top", "bottom")))
-        for ((stem, fix) in dsFixes) out["melonDS DS/$stem.opt"] = cfg(melonDs(DS_LAYOUTS) + fix)
+        for (stem in dsTouchFirst) out["melonDS DS/$stem.opt"] = cfg(melonDs(dsOrder(look.dsFirst, listOf("largescreen-bottom", "largescreen-top", "bottom", "top", "top-bottom"))))
+        for (stem in dsBothScreens) out["melonDS DS/$stem.opt"] = cfg(melonDs(dsOrder(look.dsFirst, listOf("top-bottom", "largescreen-top", "largescreen-bottom", "top", "bottom"))))
+        for ((stem, fix) in dsFixes) out["melonDS DS/$stem.opt"] = cfg(melonDs(dsOrder(look.dsFirst)) + fix)
         // The buttons the controls note gives (R2 the layouts, R3 a touch at the pointer, L2 the microphone, L3 the
         // pointer's speed-up and, with Y, the lid). This core moved them in 2025 (R3 layouts, R2 touch, L3 microphone).
         out["remaps/melonDS DS/melonDS DS.rmp"] = "input_player1_btn_r2 = \"15\"\ninput_player1_btn_r3 = \"13\"\n" +
@@ -3983,6 +4008,8 @@ object ControlsNote {
         "ra:mupen64plus_next_gles3" to "A and B are the console's A and B. The right stick is the C buttons and L2 is Z. Hold R2 to use the face buttons as C buttons.",
         "ra:melondsds" to "R2 changes how the two screens sit. Touch the screen, or steer a pointer with the right stick and press it in. L2 is the microphone.",
     )
+    /** melonDS on its own (two screens): its Swap screens set to R2 (First-time setup), which moves the touch screen onto the attachment's own touch panel and back. */
+    const val MELON = "R2 swaps the two screens, so the touch screen can go on the attachment and be touched there. To leave, use melonDS's own menu."
     private const val CUBE = "The right stick is the C stick, R1 is Z, and L2 and R2 are the triggers."
     private const val REMOTE = "Left stick: the Nunchuk. Right stick: pointing. R1 shakes the remote and L3 the Nunchuk; L1 is C, L2 is Z, X and Y are 1 and 2."
     private val wiiOwn = mapOf(
@@ -4103,6 +4130,7 @@ object ControlsNote {
                 // Home leaves with Dolphin's state taken in (settleDolphin); its own Exit Emulation saves nothing.
                 parts += if (keeps) "Home leaves and keeps your place. Back, then Exit Emulation, starts it fresh next time." else "To leave: Back, then Exit Emulation."
             }
+            emulator == "melonds" -> parts += MELON
             emulator.isNotEmpty() -> parts += "To leave, use the emulator's own menu."
         }
         return parts.joinToString(" ")

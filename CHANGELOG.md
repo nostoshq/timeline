@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.0
+
+- **The dual-screen attachment is no longer taken for a television.** Its display is the same shape as a television
+  and has the same name as one through the dock, so it set every game for 60 Hz with the television's coarser
+  phosphors, though the games were on the handheld's own 120 Hz panel. Timeline now knows the attachment by its touch
+  panel, and Settings, Display, Television says when it is connected.
+- **The two screens swap with R2 in melonDS.** With the attachment connected, a DS game opens in melonDS with the top
+  screen on the attachment and the touch screen on the handheld. R2 swaps them, so the touch screen is on the
+  attachment and its own touch panel plays it. Set it once in melonDS: Settings, Input, Key mapping, Swap screens to
+  R2 (First-time setup says so too).
+- **Choose how a DS game starts.** Settings, Emulators, Nintendo DS: first arrangement picks the arrangement a DS game
+  starts in on one screen: top screen large, touch screen large, both stacked, or either screen alone. R2 still steps
+  through the other four. By game, the default, keeps the touch-screen games and the games played across both
+  screens starting the way they play best.
+
 ## 1.8.1
 
 - **Banjo-Tooie without flickering characters.** Its character models flickered every few seconds with GLideN64's

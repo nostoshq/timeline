@@ -1109,6 +1109,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         white = prefs.str("ra.white", RetroPack.whiteChoices.first()).takeIf { it in RetroPack.whiteChoices } ?: RetroPack.whiteChoices.first(),
         crt3d = prefs.bool("ra.crt3d", true), reconnectByName = padNamesDiffer(),
         n64Modern = prefs.bool("ra.n64modern", true), onePlayer = Players.onePlayer(pads(), tvDisplays().isNotEmpty()),
+        dsFirst = prefs.str("nds.first", "By game").takeIf { it in RetroPack.dsChoices } ?: "By game",
         signal = RetroPack.signals.keys.mapNotNull { g -> prefs.str("ra.signal.$g").takeIf { it.isNotEmpty() }?.let { g to it } }.toMap(),
         compatible = prefs.str("ra.draw", "Vulkan") == "Compatible", dolphinGl = prefs.str("dol.draw", "Vulkan") == "OpenGL",
         dolphinPad = prefs.bool("dol.pad", true),
@@ -2209,7 +2210,23 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         maxOf(mode.physicalWidth, mode.physicalHeight) to minOf(mode.physicalWidth, mode.physicalHeight)
     }.getOrDefault(1280 to 960)
 
+    /**
+     * The dual-screen attachment is plugged in: its touch panel is there (Players.isScreenTouch). Its display is the
+     * shape of a television and has the same name as one through the dock, so this is what tells them apart. The two
+     * share the one USB-C port, so with the attachment in, no display is a television.
+     */
+    fun attachment(): Boolean = runCatching {
+        android.view.InputDevice.getDeviceIds().any { id ->
+            android.view.InputDevice.getDevice(id)?.let { Players.isScreenTouch(it.sources, it.isExternal, it.name) } == true
+        }
+    }.getOrDefault(false)
+    /** For the Display page: the attachment is in (and so taken for no television). */
+    var attachmentNow by mutableStateOf(false)
+
     private fun tvDisplays(): List<android.view.Display> = runCatching {
+        // Seen on a Nova: taken for a television, the attachment held every game at 60 with the television's coarser
+        // phosphors, though they were on the handheld's own 120 Hz panel.
+        if (attachment()) return@runCatching emptyList()
         val dm = ctx.getSystemService(android.hardware.display.DisplayManager::class.java) ?: return@runCatching emptyList()
         dm.getDisplays(android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION).filter {
             it.state == android.view.Display.STATE_ON && (it.flags and android.view.Display.FLAG_PRIVATE) == 0 &&
@@ -2221,7 +2238,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     private fun watchTv() {
         val dm = ctx.getSystemService(android.hardware.display.DisplayManager::class.java) ?: return
         dm.registerDisplayListener(object : android.hardware.display.DisplayManager.DisplayListener {
-            override fun onDisplayAdded(displayId: Int) = tvSoon()
+            // The attachment's touch panel arrives about two seconds after its display: wait for it.
+            override fun onDisplayAdded(displayId: Int) = tvSoon(3000)
             override fun onDisplayChanged(displayId: Int) = tvSoon()
             override fun onDisplayRemoved(displayId: Int) { tvAsked.remove(displayId); tvCleared.remove(displayId); tvSoon() }
         }, android.os.Handler(android.os.Looper.getMainLooper()))
@@ -2232,14 +2250,14 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     private fun watchPads() {
         val im = ctx.getSystemService(android.hardware.input.InputManager::class.java) ?: return
         im.registerInputDeviceListener(object : android.hardware.input.InputManager.InputDeviceListener {
-            override fun onInputDeviceAdded(deviceId: Int) = writeDolphinSoon()
-            override fun onInputDeviceRemoved(deviceId: Int) = writeDolphinSoon()
+            override fun onInputDeviceAdded(deviceId: Int) { writeDolphinSoon(); tvSoon() }
+            override fun onInputDeviceRemoved(deviceId: Int) { writeDolphinSoon(); tvSoon() }   // the attachment's touch panel too
             override fun onInputDeviceChanged(deviceId: Int) {}
         }, android.os.Handler(android.os.Looper.getMainLooper()))
         writeDolphinSoon()
     }
 
-    private fun tvSoon() { tvJob?.cancel(); tvJob = scope.launch { delay(1500); tvMode() } }
+    private fun tvSoon(wait: Long = 1500) { tvJob?.cancel(); tvJob = scope.launch { delay(wait); tvMode() } }
 
     fun setTv(hz: String) { tvHz = hz; prefs.put("tv.hz", hz); tvAsked.clear(); tvCleared.clear(); tvSoon() }
 
@@ -2251,6 +2269,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
      */
     private suspend fun tvMode() {
         val tvs = tvDisplays()
+        attachmentNow = attachment()
         tvNow = tvs.firstOrNull()?.mode?.let { "${it.physicalWidth} x ${it.physicalHeight}, ${Math.round(it.refreshRate)} Hz" }.orEmpty()
         if (!device.bridge || tvHz == "auto") return
         var again = false

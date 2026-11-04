@@ -2587,6 +2587,35 @@ class ExtrasTest {
         assertFalse(files["Mupen64Plus-Next/Turok - Dinosaur Hunter (USA) (Rev 2).opt"].orEmpty().contains("astick"))
     }
 
+    @Test fun theAttachmentIsNoTelevision() {
+        // Its display is television-shaped (1920 x 1080); its touch panel is what tells it apart.
+        assertTrue(Players.isTv(1920, 1080))
+        assertTrue(Players.isScreenTouch(0x1002, true, "RetroidPocket RDS Touchscreen"))
+        assertTrue(Players.isScreenTouch(0x1002, true, "Some touch monitor"))
+        assertTrue(Players.isScreenTouch(0, false, "RetroidPocket RDS Touchscreen"))
+        assertFalse(Players.isScreenTouch(0x1002, false, "fts_ts"))                 // the Nova's own panel
+        assertFalse(Players.isScreenTouch(0x2002, true, "Virtual Mouse"))           // a mouse
+        assertFalse(Players.isScreenTouch(0x401 or 0x1000010, true, "Pro Controller"))
+    }
+
+    @Test fun dsFirstArrangement() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        fun first(files: Map<String, String>, stem: String) = files.getValue("melonDS DS/$stem.opt").lines()
+            .first { it.startsWith("melonds_screen_layout1 ") }.substringAfter('"').trimEnd('"')
+        val byGame = RetroPack.files(Look(), p)
+        assertEquals("largescreen-top", first(byGame, "melonDS DS"))
+        assertEquals("largescreen-bottom", first(byGame, "Kirby - Canvas Curse (USA)"))
+        assertEquals("top-bottom", first(byGame, "Contra 4 (USA)"))
+        val touch = RetroPack.files(Look(dsFirst = "Touch screen large"), p)
+        for (stem in listOf("melonDS DS", "Kirby - Canvas Curse (USA)", "Contra 4 (USA)")) assertEquals(stem, "largescreen-bottom", first(touch, stem))
+        assertEquals(listOf("top-bottom", "largescreen-top", "largescreen-bottom", "top", "bottom"), RetroPack.dsOrder("Both stacked"))
+        for (c in RetroPack.dsChoices.drop(1)) assertEquals(c, 5, RetroPack.dsOrder(c).toSet().size)
+        assertTrue(touch.getValue("melonDS DS/melonDS DS.opt").contains("melonds_number_of_screen_layouts = \"5\""))
+        // melonDS on its own: R2 is its Swap screens (set in First-time setup), which puts the touch screen on the attachment.
+        val n = ControlsNote.of("nds", "kirby - canvas curse", "melonds", true, null)
+        assertTrue(n, n.startsWith("R2 swaps the two screens"))
+    }
+
     @Test fun doom64IsOnTwoSticks() {
         val files = RetroPack.files(Look(), RetroPack.Paths("/h", "pkg", "/d", "/a"))
         val rmp = files.getValue("remaps/Mupen64Plus-Next/Doom 64 (USA) (Rev 1).rmp")

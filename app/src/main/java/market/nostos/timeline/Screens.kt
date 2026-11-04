@@ -1077,7 +1077,12 @@ private fun menu(app: AppState, id: String): MenuDef = when {
             onA = { app.push(Screen.Menu("setup")) }),
         app.toggle("Nintendo DS on two screens", "nds.two", true,
             "With the dual-screen attachment (or any second display) connected, DS games open in melonDS: the top screen there, the touch " +
-                "screen on this panel. Each game's save goes with it between melonDS and RetroArch. Needs melonDS, which setup installs."),
+                "screen on this panel. R2 swaps them, so the touch screen is on the attachment and its own touch panel plays it. " +
+                "Each game's save goes with it between melonDS and RetroArch. Needs melonDS, which setup installs."),
+        app.choice("Nintendo DS: first arrangement", "nds.first", RetroPack.dsChoices,
+            "How the two screens sit as a DS game starts on this panel alone, in RetroArch; R2 then steps through the other four. " +
+                "By game starts most with the top screen large, the touch-screen games (Kirby: Canvas Curse, Elite Beat Agents, Layton, Ghost Trick) " +
+                "with the touch screen large, and Sonic Rush, Contra 4 and The World Ends with You with both stacked."),
    ) + app.systems().map { s ->
         val chosen = app.chosen(s)
         val plan = Runner.plan(app.ctx, chosen, "/x")
@@ -1160,7 +1165,8 @@ private fun menu(app: AppState, id: String): MenuDef = when {
             }),
         Item("Refresh rate", "${app.refreshRate.toInt()} Hz", "The fastest mode the panel offers is asked for automatically."),
         Item("Television", if (app.tvHz == "60") "60 Hz" else "Its own choice",
-            (if (app.tvNow.isEmpty()) "No television connected now. " else "Showing ${app.tvNow}. ") +
+            (if (app.attachmentNow) "The dual-screen attachment is connected, which is not taken for a television. "
+                else if (app.tvNow.isEmpty()) "No television connected now. " else "Showing ${app.tvNow}. ") +
                 "Docked, games are set for 60 Hz, which every television shows. 60 Hz also asks a television showing " +
                 "another rate for 60, at a size the dock already carries (Retroid devices); its own choice leaves it as it " +
                 "is. The phosphors are drawn twice as wide on a television under 4K, so they stay even when the dock " +
