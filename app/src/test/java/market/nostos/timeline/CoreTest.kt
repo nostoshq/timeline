@@ -2598,6 +2598,14 @@ class ExtrasTest {
         assertFalse(Players.isScreenTouch(0x401 or 0x1000010, true, "Pro Controller"))
     }
 
+    @Test fun aReturnToMelonDsHandsItNoGame() {
+        val p = LaunchPlan("melonDS", "me.magnum.melonds", "me.magnum.melonds.ui.emulator.EmulatorActivity", true, "me.magnum.melonds.LAUNCH_ROM",
+            null, false, null, mapOf("uri" to "content://x"), emptyMap(), emptyMap(), true)
+        val r = Launch.returnTo(p)
+        assertEquals(null, r.action); assertTrue(r.extras.isEmpty()); assertEquals(false, r.grantRead)
+        assertEquals(p.pkg, r.pkg); assertEquals(p.cls, r.cls)
+    }
+
     @Test fun dsFirstArrangement() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         fun first(files: Map<String, String>, stem: String) = files.getValue("melonDS DS/$stem.opt").lines()

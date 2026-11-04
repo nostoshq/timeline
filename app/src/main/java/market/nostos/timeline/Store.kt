@@ -3134,7 +3134,11 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // Nintendo DS: the newer of its two saves goes where the emulator about to run reads it.
             // (Only between the two melonDS: DraStic keeps a save of its own.)
             var intoRetro = false
-            if (g.system == "nds" && (emulatorId == "melonds" || emulatorId == "ra:melondsds")) {
+            // melonDS's screen opens once (singleTask) and asks "Stop emulation and load new ROM?" of every game handed to
+            // it while one runs, pausing it and dimming the attachment behind the question (seen on a Nova). A return to
+            // the game it holds is handed no game at all, which it ignores: its screen just comes forward.
+            val melonBack = emulatorId == "melonds" && back && withContext(Dispatchers.IO) { Proc.hasWindow(ctx, plan.pkg) } == true
+            if (g.system == "nds" && !melonBack && (emulatorId == "melonds" || emulatorId == "ra:melondsds")) {
                 val ds = withContext(Dispatchers.IO) { runCatching { syncDsSave(g, toMelon = emulatorId == "melonds") }.getOrNull() }
                 ds?.message?.let { say(it) }
                 intoRetro = ds?.intoRetro == true
@@ -3190,7 +3194,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                 prefs.put("playing.undo", g.key + "\n" + (plays[g.key]?.let { "${it.count}\t${it.last}\t${it.seconds}" } ?: "none"))
             }
             awayForGame = true
-            val problem = Runner.start(ctx, launch)
+            val problem = Runner.start(ctx, if (melonBack) Launch.returnTo(launch) else launch)
             starting = false
             if (problem != null) { awayForGame = false; again = null; after = null; say(problem); return@launch }
             // This sitting's frame record, read when the launcher is back (readStutter).

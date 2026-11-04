@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.1
+
+- **Going back to a DS game in melonDS keeps both screens.** Timeline handed melonDS the game again, and melonDS
+  paused it to ask "Stop emulation and load new ROM?", dimming the attachment behind the question. Now a return to
+  the game melonDS holds only brings its screen forward.
+
 ## 1.9.0
 
 - **The dual-screen attachment is no longer taken for a television.** Its display is the same shape as a television

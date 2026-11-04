@@ -198,6 +198,10 @@ data class LaunchPlan(
 }
 
 object Launch {
+    /** The same emulator screen with no game in it: brings an open game forward without handing it the game again. */
+    fun returnTo(plan: LaunchPlan): LaunchPlan =
+        plan.copy(action = null, category = null, data = null, extras = emptyMap(), bools = emptyMap(), arrays = emptyMap(), clear = false, grantRead = false)
+
     /** Back in the launcher this soon after a start, and the game never opened. */
     const val CLOSED_AT_ONCE_MS = 7000L
     // Dolphin builds its shaders before a game starts, and the Nova's Vulkan driver failed with GameCube games two to
