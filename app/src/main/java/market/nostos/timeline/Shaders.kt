@@ -729,6 +729,77 @@ void main()
 """.trimStart()
 }
 
+/**
+ * The Nintendo 64 video chip's own blend between lines, for a game whose picture has more lines than the television
+ * shows. New Tetris draws 298 lines and the chip spreads them over 237, mixing each pair of neighbours as it goes.
+ * GLideN64 instead hands over each of the game's lines as a block of 6 or 7 rows, unevenly, and averaging those
+ * blocks into television lines left a bar every fourth line. This pass spreads each row over exactly one of the
+ * game's lines ([tl_rows] rows tall), which turns the blocks back into the even blend between lines the chip made.
+ * Written for the Timeline launcher.
+ */
+object ViBlend {
+    const val GLSL = "timeline-vi.glsl"
+
+    val glsl = """
+// Timeline: the Nintendo 64 video chip's blend between lines, in RetroArch's GLSL. Written for the Timeline launcher.
+#pragma parameter tl_rows "Rows to each of the game's own lines" 4.0 1.0 16.0 0.001
+#if defined(VERTEX)
+#if __VERSION__ >= 130
+#define COMPAT_VARYING out
+#define COMPAT_ATTRIBUTE in
+#else
+#define COMPAT_VARYING varying
+#define COMPAT_ATTRIBUTE attribute
+#endif
+COMPAT_ATTRIBUTE vec4 VertexCoord;
+COMPAT_ATTRIBUTE vec4 TexCoord;
+COMPAT_VARYING vec4 TEX0;
+uniform mat4 MVPMatrix;
+void main()
+{
+    gl_Position = MVPMatrix * VertexCoord;
+    TEX0.xy = TexCoord.xy;
+}
+#elif defined(FRAGMENT)
+#ifdef GL_ES
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+#endif
+#if __VERSION__ >= 130
+#define COMPAT_VARYING in
+#define COMPAT_TEXTURE texture
+out vec4 FragColor;
+#else
+#define COMPAT_VARYING varying
+#define FragColor gl_FragColor
+#define COMPAT_TEXTURE texture2D
+#endif
+uniform sampler2D Texture;
+uniform vec2 TextureSize;
+COMPAT_VARYING vec4 TEX0;
+#ifdef PARAMETER_UNIFORM
+uniform float tl_rows;
+#else
+#define tl_rows 4.0
+#endif
+
+void main()
+{
+    // Eight even samples across one of the game's lines, centered on this row: their average is the line's share of
+    // each block it overlaps, so the blocks' edges fall evenly whatever their height.
+    float line = tl_rows / TextureSize.y;
+    vec3 sum = vec3(0.0);
+    for (int k = 0; k < 8; k++)
+        sum += COMPAT_TEXTURE(Texture, TEX0.xy + vec2(0.0, (float(k) - 3.5) / 8.0 * line)).rgb;
+    FragColor = vec4(sum / 8.0, 1.0);
+}
+#endif
+""".trimStart()
+}
+
 object Signal {
     const val SLANG = "timeline-signal.slang"
     const val GLSL = "timeline-signal.glsl"

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.10.0
+
+- **Battery has a page of its own.** Settings, Battery holds Smart charging (moved from Settings, Device) and the
+  battery's health, and on Retroid handhelds three new switches, each off until you switch it on: **Charge to 100%
+  this time**, for a trip, which hands back to Smart charging once the charger comes off; **Sleep when untouched**,
+  which sleeps the screen after 15 minutes with no button, stick or touch, even in a game; and **Power off after a long
+  sleep**, which turns the handheld off after 8 hours asleep on battery, or holds on until 5% if a game may be open.
+- **The clock after a flat battery.** A battery run completely flat resets a Retroid handheld's clock to months ago.
+  Settings, Device, Date and time sets it by the day, hour and minute without Wi-Fi, and with **Keep the clock** on,
+  the next start puts it back to the last time the handheld was on.
+- **Buttons by system.** Settings, Controls, Buttons by system sets what each button does on each console, in
+  RetroArch and in Dolphin's GameCube and Wii profiles, beside what M1 and M2 do. It follows your folder names, so a
+  library laid out as "megadrive" or "ps1" is covered too.
+- **Controllers taught once, on Retroid handhelds.** There every controller reaches Android under the built-in
+  controls' numbers, so RetroArch gave each of them the built-in layout. Settings, Controls, Controllers teaches one
+  its buttons a button at a time, and RetroArch and Dolphin know it by name from then on. Other devices keep
+  RetroArch's own controller files.
+- **Every console plays on Strong power** (with Power and fan by system on). On Standard power the chip slows between
+  bursts of work, and a refresh can be missed while it speeds up again: a flicker under the beam simulator. On a
+  Retroid Pocket Nova, New Tetris's demo missed 8 to 175 refreshes in each 30 seconds on Standard and none in 60 seconds
+  on Performance.
+- **The New Tetris without bars.** Its backgrounds showed a bright bar every few lines. GLideN64's own fixes now remove
+  the joins between the strips they are drawn in, and its own preset blends its 298 lines onto the television's 237 as
+  the console's video chip did.
+- **Quiet in the dock.** On a television the scroll ticks stop, and on Retroid handhelds, with Settings, Controls, Quiet
+  in the dock on, game rumble stops too. Both come back when the television is unplugged.
+- **The rest screen stays lit only on the charger** unless you choose otherwise (Settings, Display, Rest screen stays
+  lit).
+
 ## 1.9.1
 
 - **Going back to a DS game in melonDS keeps both screens.** Timeline handed melonDS the game again, and melonDS

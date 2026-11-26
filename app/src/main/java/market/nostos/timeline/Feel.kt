@@ -119,7 +119,11 @@ object Feel {
         runCatching { p.play(ids[which], left, right, 1, 0, 1f) }
     }
 
+    /** On a television the handheld sits in its dock, where a buzz is only a rattle: no ticks then ([DockQuiet]). */
+    @Volatile var docked = false
+
     private fun buzz() {
+        if (docked) return
         val v = vibrator ?: return
         val e = tick ?: return
         runCatching {

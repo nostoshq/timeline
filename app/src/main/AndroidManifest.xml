@@ -70,6 +70,8 @@
         <!-- Hears Android's answer after a downloaded emulator's installer is handed to it. -->
         <receiver android:name=".InstallReceiver" android:exported="false" />
         <receiver android:name=".ChargeCheck" android:exported="false" />
+        <!-- The hourly look while asleep on battery (SleepGuard), with Power off after a long sleep on. -->
+        <receiver android:name=".SleepCheck" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

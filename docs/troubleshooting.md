@@ -43,9 +43,9 @@ Controls, Swap confirm and back.** (On the very first screen, pressing the other
 **Saves from before Timeline don't show up.** Timeline gives RetroArch a settings file of its own, with saves in
 RetroArch's `saves` folder, sorted by core. Move older saves there, into the folder named for the game's core.
 
-**The battery stops charging at 80%.** That is Retroid's own charge limit, which **Settings, Device, Charging** can
-switch on. Set it back to **Always to 100%**. If Timeline has been uninstalled, switch the limit off in Retroid's own
-battery settings.
+**The battery stops charging at 80%.** That is Retroid's own charge limit, which **Settings, Battery, Smart
+charging** can switch on. Switch it off, or choose **Charge to 100% this time** for a single full charge. If Timeline
+has been uninstalled, switch the limit off in Retroid's own battery settings.
 
 Timeline is offered as is, and this repository isn't watched for questions. Everything it does is in these pages and
 in the source, which you are free to read, change and build.

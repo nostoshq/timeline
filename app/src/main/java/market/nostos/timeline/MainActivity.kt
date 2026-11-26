@@ -277,6 +277,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun applyRest(idle: Boolean, lit: Boolean) {
         runCatching { setShowWhenLocked(idle) }
+        SleepGuard.untouched(applicationContext, lit)            // a rest screen kept lit is not put to sleep by Android
         if (lit) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes = window.attributes.apply {
             screenBrightness = if (idle) 0.04f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -440,6 +441,10 @@ class MainActivity : ComponentActivity() {
             return super.dispatchKeyEvent(event)
         }
         closingBox = false
+        if (app.teaching != null) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) app.teachKey(event.device?.name, event.keyCode)
+            return true
+        }
         if (app.learning != null) {
             // The Controls page is waiting to hear what M1 or M2 sends. B backs out; anything else is recorded.
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
@@ -474,6 +479,7 @@ class MainActivity : ComponentActivity() {
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         val joystick = ev.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
         if (!joystick || ev.action != MotionEvent.ACTION_MOVE || app.textEntry != null) return super.dispatchGenericMotionEvent(ev)
+        if (app.teaching != null) return true                   // sticks stay as they come: only buttons are taught
         fun axis(a: Int, b: Int): Float = ev.getAxisValue(a).let { if (it != 0f) it else ev.getAxisValue(b) }
         val x = axis(MotionEvent.AXIS_HAT_X, MotionEvent.AXIS_X)
         val y = axis(MotionEvent.AXIS_HAT_Y, MotionEvent.AXIS_Y)

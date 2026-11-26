@@ -23,10 +23,13 @@ d-pad and four face buttons, and touch works too.
 | PS2 autosave and 480-line look set up for you (switch on) | | yes | yes |
 | Fan and power by console, heat guard (switch on) | | yes | yes |
 | Stick lights, battery held at 80% on the charger (switch on) | | yes | yes |
+| Sleep when untouched, power off after a long sleep, clock kept after a flat battery (switch on) | | yes | yes |
+| Buttons by system | yes | yes | yes |
+| Controllers taught their buttons once | | yes | yes |
 | Measured color calibration (offered on the firmware it was measured on) | | | yes |
 | Measured speaker correction | | | yes |
 
 The Retroid extras use the maker's own settings service, which Retroid devices ship with. Timeline looks for it and
 uses it only when it is there; it never asks you to root anything. Each extra marked "switch on" stays off until you
-choose it in **Settings, Device**, and was measured on a Retroid Pocket Nova. On other Retroid models, try one at a
+choose it in **Settings, Device** or **Settings, Battery**, and was measured on a Retroid Pocket Nova. On other Retroid models, try one at a
 time. Switching power and fan off puts back the modes that were set before.

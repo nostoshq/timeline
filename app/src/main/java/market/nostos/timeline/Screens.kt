@@ -1308,18 +1308,76 @@ private fun menu(app: AppState, id: String): MenuDef = when {
     id == "battery" -> {
         val b = BatteryInfo.read(app.ctx)
         val held = ChargeCare.held(app.ctx)
-        MenuDef(settings("Device", "Battery"), listOf(
+        val d = app.device
+        val none = "Not offered by this device."
+        val smart = app.prefs.str("dev.charge", ChargeHold.modes.first()) == "Smart"
+        val full = app.prefs.int("charge.full", ChargeHold.FULL_OFF) != ChargeHold.FULL_OFF
+        MenuDef(settings("Battery"), listOf(
+            Item("Charge to 100% this time", if (!smart) "Always" else if (full) "On" else "Off",
+                if (!d.canHoldCharge) none
+                else if (!smart) "Smart charging is off, so every charge goes to 100%."
+                else "For a trip or a long session. The next charge goes all the way to 100% instead of resting at 80%, and Smart " +
+                    "charging comes back by itself once the charger comes off.",
+                onStep = {
+                    if (d.canHoldCharge && smart) {
+                        app.prefs.put("charge.full", if (full) ChargeHold.FULL_OFF else ChargeHold.FULL_ASKED)
+                        app.applyCharge()
+                        app.touchSettings()
+                    }
+                }),
+            Item("Smart charging", if (smart) "On" else "Off",
+                if (d.canHoldCharge) "Put down on the charger for half an hour, the handheld rests at 80%, or stops topping up if it is " +
+                    "already above. Left alone at full, the charger would keep the battery at its highest voltage for as long as it sits " +
+                    "there. Pick it up or start a game and it charges on to 100%. Retroid's own 80% limit does the holding; it comes off " +
+                    "when the charger does. Off: every charge goes to 100%."
+                else none,
+                onStep = {
+                    if (d.canHoldCharge) {
+                        app.prefs.put("dev.charge", if (smart) "Always to 100%" else "Smart")
+                        app.applyCharge()
+                        app.touchSettings()
+                    }
+                }),
+            app.toggle("Sleep when untouched", "sleep.untouched", false,
+                if (d.bridge) "After 15 minutes with no button, stick or touch, the screen goes to sleep, even in a game. Android shows a " +
+                    "notice for the last 30 seconds, and any press keeps it awake. Waking it brings the game back where it was."
+                else none) { SleepGuard.untouched(app.ctx, app.keepLit) },
+            app.toggle("Power off after a long sleep", "sleep.off", false,
+                if (d.bridge) "Asleep, a Retroid Pocket Nova still uses about 1% an hour and would be flat in a few days. On battery, " +
+                    "after 8 hours asleep the handheld turns itself off instead, and the power button starts it again. If a game may " +
+                    "still be open, it stays asleep until 5%, so a place you have not saved is kept as long as there is battery for it."
+                else none) { SleepGuard.keepWatch(app.ctx) },
+            Item("Now", buildString {
+                append(if (app.batteryLevel >= 0) "${app.batteryLevel}%" else "")
+                append(when { !b.plugged -> ""; held -> ", resting at 80%"; else -> ", charging" })
+            }, if (held) "Resting on the charger, so Retroid's limit is holding it at 80%. A button or a game and it charges on to 100%." else ""),
             Item("Health", b.health?.let { "$it%" } ?: "",
                 if (b.fullMah != null && b.designMah != null) "It holds ${b.fullMah} mAh now, against ${b.designMah} mAh when new. A battery loses a little each year; " +
                     "under 80% it is worn." else "This device does not report it."),
             Item("Charge cycles", b.cycles?.toString() ?: "", "Each full charge's worth used counts as one."),
             Item("Temperature", b.tempC?.let { "${it.toInt()}°C" } ?: "",
                 "Charging slows itself when the battery is warm. With Heat guard on (Settings, Device), the fan steps up at 45°C while a game runs."),
-            Item("Charging care", when { !b.plugged -> "Not charging"; held -> "Holding at 80%"; else -> "Charging normally" },
-                if (held) "Resting on the charger, so Retroid's limit is holding it at 80% (or not topping it up above). A button or a game and it charges on to 100%."
-                else "Smart holds the battery at 80% after half an hour resting on the charger, and charges on to 100% once you pick it up."),
             Item("Voltage", b.volts?.let { "%.2f V".format(java.util.Locale.US, it) } ?: "", "Its highest is 4.5 V, when full."),
        ))
+    }
+    id == "clock" -> {
+        val now = java.util.Date()
+        val d = app.device
+        fun row(label: String, pattern: String, unit: String, note: String) =
+            Item(label, java.text.SimpleDateFormat(pattern, java.util.Locale.US).format(now), note,
+                onStep = { step -> if (d.bridge) ClockGuard.shift(app.ctx, unit, step) { app.settingsTick++ } })
+        MenuDef(settings("Device", "Date and time"), listOf(
+            row("Date", "EEE, MMM d, yyyy", "day", "Left and right move it a day."),
+            row("Hour", "h a", "hour", "Left and right move it an hour."),
+            row("Minute", "mm", "minute", "Left and right move it a minute. Seconds start from where they are."),
+            app.toggle("Keep the clock", ClockGuard.PREF, false,
+                "Keeps Android's automatic time on, so the clock is set from the internet whenever Wi-Fi is on. And if the battery ever " +
+                    "runs completely flat and resets the clock, the next start puts it back to the last time the handheld was on, " +
+                    "instead of a date months ago.") { on -> if (on) ClockGuard.switchedOn(app.ctx) },
+            Item("Set automatically", if (runCatching { Settings.Global.getInt(app.ctx.contentResolver, Settings.Global.AUTO_TIME) }.getOrDefault(0) == 1) "On" else "Off",
+                "Android's own setting: it corrects the clock from the internet whenever Wi-Fi is on. A opens Android's date and time page.",
+                onA = { Runner.openSettings(app.ctx, Settings.ACTION_DATE_SETTINGS) }),
+        ), hints = listOf("◀ ▶" to "Change", "B" to "Back"))
     }
     id == "android" -> {
         val nav = Runner.navigationMode(app.ctx)
@@ -1365,11 +1423,10 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 if (d.canPower) "While a game runs, reads the chip's and the battery's temperature every ten seconds. The fan steps up a mode at 80°C on the chip " +
                     "(it would slow itself at 95°C) or 45°C on the battery, and back down once both have cooled. " +
                     "Only the maker's Quiet, Smart and Sport, never off and never a raw speed. Needs Power and fan by system." else none),
-            Item("Battery", "", "Its health, charge cycles and temperature, and what charging care is doing now.", onA = { app.push(Screen.Menu("battery")) }),
-            app.choice("Charging", "dev.charge", ChargeHold.modes,
-                if (d.canHoldCharge) "Smart: put down on the charger for half an hour, the handheld stops at 80%, or stops topping up if it is already above. " +
-                    "Pick it up or start a game and it charges on to 100%. Left alone at full, the charger would keep the battery at its highest voltage for as long as it sits there. " +
-                    "Retroid's own 80% limit does the holding; it comes off when the charger does." else none) { app.applyCharge() },
+            Item("Battery", "", "Charging, sleep and power off, and the battery's health.", onA = { app.push(Screen.Menu("battery")) }),
+            Item("Date and time", java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US).format(java.util.Date()),
+                if (d.bridge) "Set by the day, hour and minute here, without Wi-Fi or Android's menus, and kept from going back after a flat battery." else none,
+                onA = { if (d.bridge) app.push(Screen.Menu("clock")) }),
             app.toggle("Set up ARMSX2 for me", "ps2.manage", false,
                 if (d.bridge) "Before each PlayStation 2 game, sets ARMSX2's autosave to follow Keep your place and keeps the 480-line look in its shaders folder. " +
                     "Off, ARMSX2 is left exactly as you set it." else none),
@@ -1386,8 +1443,15 @@ private fun menu(app: AppState, id: String): MenuDef = when {
     id == "controls" -> {
         fun code(which: String) = app.prefs.int("$which.code", 0).let { if (it > 0) "Button $it" else "Not taught yet" }
         val waiting = app.learning
+        val d = app.device
+        val retroid = app.retroid()
         MenuDef(settings("Controls"), listOf(
-            app.toggle("Vibration on scroll", "feel.haptics", true, "A light tick of the motor each time the highlight moves.") { Feel.haptics = it },
+            app.toggle("Vibration on scroll", "feel.haptics", true, "A light tick of the motor each time the highlight moves. " +
+                "On a television the handheld sits in its dock, so there are no ticks until the television is unplugged.") { Feel.haptics = it },
+            app.toggle("Quiet in the dock", DockQuiet.PREF, false,
+                if (d.bridge) "No rumble from games on a television either. On Retroid's handhelds a game's rumble reaches the handheld's " +
+                    "own motor whichever controller is in your hands, so in the dock it only rattles. It comes back when the television is unplugged."
+                else "Not offered by this device.") { DockQuiet.apply(app.ctx, app.docked()) },
             app.toggle("Swap confirm and back", "swapConfirm", false, "For pads that put confirm on the right-hand face button.") { app.swapConfirm = it },
             app.toggle("Nintendo 64 shooters: modern controls", "ra.n64modern", true,
                 "GoldenEye 007, Perfect Dark, both Turoks, Doom 64 and Sin and Punishment walk on the left stick and aim with the right. " +
@@ -1398,26 +1462,81 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 onA = { app.learning = "m1" }),
             Item("Teach M2", if (waiting == "m2") "Press M2 now" else code("m2"),
                 "Press A, then press the M2 button on the top edge.", onA = { app.learning = "m2" }),
-            Item("What they do, by system", "", "Rewind and fast-forward on cartridge systems, the RetroArch menu and fast-forward elsewhere, unless you choose otherwise.",
+            Item("Controllers", if (retroid) app.taughtPads().size.takeIf { it > 0 }?.let { "$it taught" } ?: "" else "",
+                if (retroid) "Teach any controller its buttons once, a button at a time. It is known by its name from then on, whenever it connects, " +
+                    "in RetroArch and Dolphin, and the teaching is kept on the card."
+                else "Nothing to teach on this device: RetroArch and Dolphin know each controller by its own name and numbers. Teaching is " +
+                    "for Retroid's handhelds, where every controller arrives under the built-in controls' numbers.",
+                onA = { if (retroid) app.push(Screen.Menu("pads")) }),
+            Item("Buttons by system", "", "What each button does on each system, and what M1 and M2 do: rewind and fast-forward on cartridge " +
+                "systems, the RetroArch menu and fast-forward elsewhere, unless you choose otherwise.",
                 onA = { app.push(Screen.Menu("extra")) }),
             Item("Other emulators", "", "ARMSX2, Dolphin, melonDS and Flycast have their own hotkey pages: once taught here, M1 and M2 can be picked there like any other button."),
        ))
     }
-    id == "extra" -> MenuDef(settings("Controls", "Extra buttons"), app.systems().filter { s -> s.emulators.any { it.startsWith("ra:") } }.map { s ->
+    id == "pads" -> {
+        val t = app.teaching
+        if (t != null) {
+            val b = Buttons.all[t.step]
+            MenuDef(settings("Controls", "Controllers", t.name), listOf(
+                Item("Press ${b.label}", "${t.step + 1} of ${Buttons.all.size}",
+                    "On ${t.name}, press the button you want as the handheld's ${b.label}: ${b.where}. " +
+                        "Start on the handheld skips it and leaves it as it comes; B on the handheld stops without keeping anything."),
+            ) + Buttons.all.take(t.step).map { done ->
+                Item(done.label, t.got[done.key]?.let { "Button $it" } ?: "As it comes")
+            }, hints = listOf("Start" to "Skip", "B" to "Stop"), focus = 0)
+        } else {
+            val taught = app.taughtPads()
+            val connected = app.teachable()
+            val rows = connected.map { name ->
+                val has = name in taught
+                Item(name, if (has) "Taught" else "As it comes",
+                    if (has) "A teaches it again. Left or right takes the teaching away, back to how it came."
+                    else "A teaches it: twelve buttons, one at a time, about half a minute.",
+                    onA = { app.teach(name) }, onStep = { if (has) app.forgetPad(name) })
+            } + taught.keys.filter { it !in connected }.sorted().map { name ->
+                Item(name, "Taught", "Not connected now. Left or right takes the teaching away.", onStep = { app.forgetPad(name) })
+            }
+            MenuDef(settings("Controls", "Controllers"), rows.ifEmpty {
+                listOf(Item("No controller connected", "", "Connect one over Bluetooth in Android's settings, then come back here. The handheld's own controls need no teaching."))
+            }, hints = listOf("A" to "Teach", "B" to "Back"))
+        }
+    }
+    id == "extra" -> MenuDef(settings("Controls", "Buttons by system"), app.systems().filter { s -> s.emulators.any { it.startsWith("ra:") } || s.id == "gc" || s.id == "wii" }.map { s ->
+        val mine = app.buttonMap(s.id)
+        val ra = s.emulators.any { it.startsWith("ra:") }
         val (a, b) = app.extraButtons(s.id)
-        Item(s.name, "M1 ${a.lowercase()}  ·  M2 ${b.lowercase()}", "Press A to change what the two buttons do on this system.", onA = { app.push(Screen.Menu("extra:" + s.id)) })
+        Item(s.name, listOfNotNull("Own buttons".takeIf { mine.isNotEmpty() }, "M1 ${a.lowercase()}  ·  M2 ${b.lowercase()}".takeIf { ra }).joinToString("  ·  ").ifEmpty { "As usual" },
+            "Press A to change what the buttons do on this system.", onA = { app.push(Screen.Menu("extra:" + s.id)) })
     }, hints = listOf("A" to "Change", "B" to "Back"))
     id.startsWith("extra:") -> {
         val system = id.removePrefix("extra:")
         val (a, b) = app.extraButtons(system)
+        val ra = Catalog.system(system)?.emulators?.any { it.startsWith("ra:") } == true
         fun step(which: String, now: String, d: Int) {
             app.prefs.put("$which.$system", Hotkeys.actions[(Hotkeys.actions.indexOf(now) + d).mod(Hotkeys.actions.size)])
             app.touchSettings()
         }
-        MenuDef(settings("Controls", Catalog.system(system)?.name ?: system), listOf(
+        val mine = app.buttonMap(system)
+        val choices = Buttons.all.map { it.key } + Buttons.NOTHING
+        fun label(k: String) = if (k == Buttons.NOTHING) "Nothing" else Buttons.byKey(k)?.label ?: k
+        val buttons = Buttons.all.map { btn ->
+            val now = mine[btn.key] ?: btn.key
+            Item("${btn.label} does", label(now) + if (now == btn.key) "" else "  ·  changed",
+                "What ${btn.label} (${btn.where}) does on this system, as another of the handheld's buttons. Left and right change it. " +
+                    "It works the same on every controller, taught or not.",
+                onStep = { d ->
+                    val next = choices[(choices.indexOf(now) + d).mod(choices.size)]
+                    app.setButtonMap(system, (mine + (btn.key to next)).filter { (k, v) -> k != v })
+                })
+        }
+        MenuDef(settings("Controls", Catalog.system(system)?.name ?: system), (if (ra) listOf(
             Item("M1 does", a, "Left and right change it. Rewind switches rewinding on for this system.", onStep = { d -> step("m1", a, d) }),
             Item("M2 does", b, "Left and right change it.", onStep = { d -> step("m2", b, d) }),
-       ), hints = listOf("◀ ▶" to "Change", "B" to "Back"))
+        ) else emptyList()) + buttons + listOf(
+            Item("Back to the usual buttons", if (mine.isEmpty()) "Usual" else "", "Every button back to doing its own job on this system.",
+                onA = { app.setButtonMap(system, emptyMap()) }),
+        ), hints = listOf("◀ ▶" to "Change", "B" to "Back"))
     }
     id == "achievements" -> MenuDef(settings("RetroAchievements"), listOf(
         app.toggle("RetroAchievements", "ra.cheevos", false,
@@ -1507,13 +1626,15 @@ private fun menu(app: AppState, id: String): MenuDef = when {
         Item("Sound", "", "Interface sounds, and a tone shape for the built-in speakers that stays put.", onA = { app.push(Screen.Menu("sound")) }),
         Item("Library", "", "Sorting, where the launcher opens, folders and space.", onA = { app.push(Screen.Menu("library")) }),
         Item("Emulators", "", "Which emulator each system opens in, and the setup checklist.", onA = { app.push(Screen.Menu("emulators")) }),
-        Item("Device", "", "Stick lights, power and fan by system, heat guard.", onA = { app.push(Screen.Menu("device")) }),
+        Item("Battery", app.batteryLevel.takeIf { it >= 0 }?.let { "$it%" } ?: "", "Charge to 100% for a trip, Smart charging, sleep when untouched, power off after a long sleep.",
+            onA = { app.push(Screen.Menu("battery")) }),
+        Item("Device", "", "Stick lights, power and fan by system, heat guard, date and time.", onA = { app.push(Screen.Menu("device")) }),
         Item("Close everything in the background", "", "Closes every emulator still open behind the launcher, for a clean start. If a game is open in one, " +
             "the first press names it and a second press closes it without saving. hakuX is left alone: close its game from its own menu, " +
             "since stopping it mid-write could damage the Xbox hard disk.", onA = { app.closeBackground() }),
         Item("RetroAchievements", "", "Achievements in RetroArch games, with your own account.", onA = { app.push(Screen.Menu("achievements")) }),
         Item("Scraper", "", "Fetch pictures and details for the games on the card.", onA = { app.push(Screen.Menu("scraper")) }),
-        Item("Controls", "", "Vibration on scroll, swap confirm and back, and the two extra buttons.", onA = { app.push(Screen.Menu("controls")) }),
+        Item("Controls", "", "Vibration on scroll, swap confirm and back, the two extra buttons, and buttons by system.", onA = { app.push(Screen.Menu("controls")) }),
         Item("Android apps", "", "Everything else installed on the device.", onA = { app.push(Screen.Apps) }),
         Item("Android settings", "", "Navigation and screen lock, then Wi-Fi, Bluetooth, controllers, storage.", onA = { app.push(Screen.Menu("android")) }),
         Item("Make this the home screen", if (Runner.isHome(app.ctx)) "Done" else "",

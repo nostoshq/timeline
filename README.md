@@ -97,7 +97,8 @@ needn't be the only one.
 ### Controllers, televisions and screens
 
 In your hands, the handheld's own controls are player one, and each controller you connect takes the next player; in
-GameCube and Wii games, the first controller you connect also plays as player one.
+GameCube and Wii games, the first controller you connect also plays as player one. Settings, Controls, Buttons by
+system sets what each button does on each console, in RetroArch and Dolphin alike.
 Docked to a television, games are set for 60 Hz, which every television shows, and the phosphor mask is drawn wider
 so the dock's scaling doesn't make it shimmer. Timeline runs on 4:3 handhelds like the
 Retroid Pocket Nova and on 16:9 ones, using the whole screen.
@@ -109,8 +110,10 @@ Retroid Pocket Nova and on 16:9 ones, using the whole screen.
 ### Made with Retroid devices in mind
 
 On Retroid handhelds, Timeline can also set the fan and power for each console, color the stick lights, hold the
-battery at 80% while it rests on the charger, and set up ARMSX2 for PlayStation 2. Each is off until you switch it on
-in Settings, Device. It copies PlayStation 2 memory cards along with everything else. On the Retroid Pocket Nova it
+battery at 80% while it rests on the charger, put an untouched handheld to sleep and power it off after a long sleep,
+keep the clock from going back after a flat battery, and set up ARMSX2 for PlayStation 2. Each is off until you switch
+it on in Settings, Device or Settings, Battery. A controller connected to a Retroid handheld can be taught its buttons
+once, and PlayStation 2 memory cards are copied along with everything else. On the Retroid Pocket Nova it
 corrects the speakers, and on the firmware it was measured on, it offers a measured color calibration.
 
 ## Getting started

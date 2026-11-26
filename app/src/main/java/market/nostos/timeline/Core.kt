@@ -152,6 +152,9 @@ object Emulators {
     /** A RetroArch core's name as its Core Downloader lists it. */
     fun coreName(core: String): String = coreNames[core] ?: core
 
+    /** Every package a game can be open in: RetroArch's and each emulator's of its own. */
+    val packages: Set<String> get() = (retroArchComponents + standalone.values.flatMap { it.components }).map { it.substringBefore('/') }.toSet()
+
     fun get(id: String): Emu? {
         if (id.startsWith("ra:")) {
             val core = id.removePrefix("ra:")
@@ -881,20 +884,48 @@ object DolphinPack {
     /** Settings in a profile that are not controls, left as they are by [across]. */
     private fun isSetting(key: String) = key == "Device" || key == "Extension" || key.startsWith("Options/") || key == "IR/Auto-Hide" || key == "IR/Relative Input"
 
+    /** Taught controllers and the GameCube's and Wii's own button choices, set by [forPorts] for the profiles it writes. */
+    private var taught: Map<String, Map<String, Int>> = emptyMap()
+    private var buttonMaps: Map<String, Map<String, String>> = emptyMap()
+    private fun padName(device: String) = device.substringAfter('/').substringAfter('/')
+
+    /** The handheld's buttons that do the job of [name] under the system's own choices: itself, or those set to do it. */
+    private fun sources(name: String, user: Map<String, String>): List<String> {
+        val b = Buttons.all.firstOrNull { it.dolphin == name } ?: return listOf(name)
+        if (user.isEmpty()) return listOf(name)
+        return Buttons.all.filter { (user[it.key] ?: it.key) == b.key }.map { it.dolphin }
+    }
+
+    /** [name] as [device] sends it: the key it was taught for that button, or the name itself. */
+    private fun named(device: String?, name: String): String {
+        val t = device?.let { taught[padName(it)] } ?: return name
+        val code = Buttons.all.firstOrNull { it.dolphin == name }?.let { t[it.key] } ?: return name
+        return Buttons.dolphinName(code) ?: name
+    }
+
     /**
      * With more than one controller to a port, each control is named with its controller ("`Android/2/Xbox Wireless
      * Controller:Button A`") and the controllers' are joined, any one of them counting. Dolphin looks the names up
-     * again whenever a controller comes or goes.
+     * again whenever a controller comes or goes. A taught controller's controls are its taught keys ([Buttons]), and a
+     * button the system has set to do another's job ([system]: "gc" or "wii") is listed under that job.
      */
-    private fun across(devices: List<String>, keys: List<Pair<String, String>>): List<Pair<String, String>> =
-        if (devices.size <= 1) keys else keys.map { (k, v) ->
+    private fun across(devices: List<String>, keys: List<Pair<String, String>>, system: String = "gc"): List<Pair<String, String>> {
+        val user = buttonMaps[system].orEmpty()
+        if (devices.size <= 1 && user.isEmpty() && devices.none { taught.containsKey(padName(it)) }) return keys
+        val one = devices.size <= 1
+        return keys.map { (k, v) ->
             if (isSetting(k)) k to v
             else k to v.split("|").map { it.trim() }.flatMap { alt ->
                 // A control that needs two at once ("`Button R2` & `Axis 11-`") takes both from the same controller.
                 val parts = alt.split("&").map { it.trim().trim('`') }
-                devices.map { d -> if (parts.size == 1) "`$d:${parts[0]}`" else parts.joinToString(" & ", "(", ")") { "`$d:$it`" } }
-            }.joinToString(" | ")
+                (if (one) listOf(devices.firstOrNull()) else devices).flatMap { d ->
+                    val at = if (one || d == null) "" else "$d:"
+                    if (parts.size == 1) sources(parts[0], user).map { "`$at${named(d, it)}`" }
+                    else listOf(parts.joinToString(" & ", "(", ")") { "`$at${named(d, it)}`" })
+                }
+            }.distinct().joinToString(" | ")
         }
+    }
 
     /**
      * The handheld's controls as a Wii Remote. Usual form: remote and Nunchuk, the left stick as the Nunchuk's, the
@@ -923,7 +954,7 @@ object DolphinPack {
                 "Classic/Right Stick/Up" to "`Axis 14-`", "Classic/Right Stick/Down" to "`Axis 14+`", "Classic/Right Stick/Left" to "`Axis 11-`", "Classic/Right Stick/Right" to "`Axis 11+`",
                 "Classic/D-Pad/Up" to "`Axis 16-`", "Classic/D-Pad/Down" to "`Axis 16+`", "Classic/D-Pad/Left" to "`Axis 15-`", "Classic/D-Pad/Right" to "`Axis 15+`",
                 "Options/Sideways Wiimote" to "False")
-            return ini(listOf("Profile" to across(devices, keys.toList())))
+            return ini(listOf("Profile" to across(devices, keys.toList(), "wii")))
         }
         keys += listOf(
             "Buttons/A" to "`Button A`", "Buttons/B" to "`Button B`", "Buttons/1" to "`Button X`", "Buttons/2" to "`Button Y`",
@@ -935,7 +966,7 @@ object DolphinPack {
             // Held like an NES pad: 1 and 2 on B and A, where an NES pad's B and A sit; the remote's own A and B above.
             keys += listOf("Buttons/1" to "`Button B`", "Buttons/2" to "`Button A`", "Buttons/A" to "`Button X`", "Buttons/B" to "`Button Y`",
                 "Options/Sideways Wiimote" to "True", "Extension" to "None")
-            return ini(listOf("Profile" to across(devices, keys.toList())))
+            return ini(listOf("Profile" to across(devices, keys.toList(), "wii")))
         }
         keys += listOf(
             "Options/Sideways Wiimote" to "False", "Extension" to "Nunchuk",
@@ -955,7 +986,7 @@ object DolphinPack {
                 tiltOnLeftStick()
             else -> {}
         }
-        return ini(listOf("Profile" to across(devices, keys.toList())))
+        return ini(listOf("Profile" to across(devices, keys.toList(), "wii")))
     }
 
     fun docs(look: Look, found: String?): List<Doc> = docs(look, listOfNotNull(found))
@@ -969,6 +1000,12 @@ object DolphinPack {
 
     /** The same with each port driven by any one of several controllers (Players.dolphinPorts). */
     fun forPorts(look: Look, controllers: List<List<String>>): List<Doc> {
+        taught = look.taught
+        buttonMaps = look.buttonMaps.filterKeys { it == "gc" || it == "wii" }
+        try { return forPortsWith(look, controllers) } finally { taught = emptyMap(); buttonMaps = emptyMap() }
+    }
+
+    private fun forPortsWith(look: Look, controllers: List<List<String>>): List<Doc> {
         val ports = if (look.dolphinPad) controllers.filter { it.isNotEmpty() }.take(4) else emptyList()   // switched off: whatever was mapped inside Dolphin
         val device = ports.firstOrNull()
         val pad = device != null
@@ -1505,20 +1542,20 @@ object Vendor {
  * bursts (compiling, translating) that would otherwise wait the moment it takes to speed up.
  */
 enum class Power(val label: String, val performance: Int, val fan: Int, val note: String) {
-    Light("Light", 0, Vendor.FAN_QUIET, "Standard power, quiet fan. For cartridge-era systems that barely warm the chip. The heat guard lifts the fan if one ever does."),
-    Balanced("Balanced", 0, Vendor.FAN_SMART, "Standard power, smart fan. For the first 3D consoles: the chip speeds up by itself the moment a game asks."),
-    Strong("Strong", 1, Vendor.FAN_SMART, "Performance power, smart fan. For PlayStation 2, GameCube, Wii and Xbox: higher lowest speeds, so bursts of work never wait for the chip."),
+    Light("Light", 0, Vendor.FAN_QUIET, "Standard power, quiet fan. The most battery: the chip waits to be asked before it speeds up, and a sudden busy moment can miss a refresh, a flicker under the beam or black frames."),
+    Balanced("Balanced", 0, Vendor.FAN_SMART, "Standard power, smart fan. Saves battery the same way, with the fan following the heat; a sudden busy moment can still miss a refresh."),
+    Strong("Strong", 1, Vendor.FAN_SMART, "Performance power, smart fan. The chip's lowest speeds are raised while a game runs, so a busy moment never waits for it: every refresh on time, no flicker. The fan follows the heat, and the heat guard steps it up if needed."),
     High("High", 2, Vendor.FAN_SPORT, "High performance power, sport fan. Holds the chip near its top speed. No system here needs it; it costs heat and battery."),
     ;
 
     companion object {
-        private val strong = setOf("ps2", "gc", "wii", "xbox", "n3ds", "psvita", "wiiu")
-        private val balanced = setOf("psx", "saturn", "n64", "dreamcast", "nds", "psp")
-        fun default(system: String): Power = when (system) {
-            in strong -> Strong
-            in balanced -> Balanced
-            else -> Light
-        }
+        /**
+         * Every system plays on Strong. On Standard power the chip drops its clocks between bursts of work and is still
+         * speeding up when the next one comes: on a Retroid Pocket Nova, New Tetris's demo missed 8 to 175 refreshes in
+         * each 30 s on Standard and none in 60 s on Performance, and under the beam or black frames each missed refresh is
+         * a visible flicker. The launcher itself rests on Standard.
+         */
+        fun default(@Suppress("UNUSED_PARAMETER") system: String): Power = Strong
         /** In the launcher, and anywhere no game is running: Standard power and the Smart fan. */
         val resting = Balanced
         fun named(label: String): Power? = entries.firstOrNull { it.label == label }
@@ -1958,6 +1995,11 @@ data class Look(
     val m1: Int = 0,                                   // the key numbers M1 and M2 send, once taught; 0 means not known
     val m2: Int = 0,
     val extras: Map<String, Pair<String, String>> = emptyMap(),   // per system: what M1 and M2 do, where it differs from the usual
+    val retroidPads: Boolean = false,                             // a Retroid handheld: controllers come in under its numbers ([Buttons.retroid])
+    val taught: Map<String, Map<String, Int>> = emptyMap(),       // taught controllers by name ([Buttons]), on a Retroid handheld
+    val buttonMaps: Map<String, Map<String, String>> = emptyMap(),// per system: what each button does, where it differs
+    val padNames: List<String> = emptyList(),                     // the external controllers connected now
+    val systemFolders: Map<String, List<String>> = emptyMap(),    // per system: the names of the folders its games sit in
     val lighter: Map<String, Boolean> = emptyMap(),    // "system/stem" of RetroArch games run lighter (true), or once run lighter (false)
     val lighterCodes: Map<String, Boolean> = emptyMap(),   // the same for GameCube and Wii games, by disc ID
     val keptOnNunchuk: Set<String> = emptySet(),           // Wii games resumed from a place made on the remote and Nunchuk (DolphinPack.nunchukFirst)
@@ -2408,6 +2450,9 @@ object RetroPack {
         "rgui_config_directory" to "${p.home}/config",
         "input_remapping_directory" to "${p.home}/config/remaps",
         "input_remap_binds_enable" to "true",
+        // Each controller's own file ([Buttons]), on a Retroid handheld only. Elsewhere RetroArch keeps its own folder,
+        // with its files for hundreds of controllers.
+        *(if (look.retroidPads) arrayOf("joypad_autoconfig_dir" to "${p.home}/config/autoconfig") else emptyArray()),
         "video_shader_dir" to "${p.home}/shaders",
         "audio_dsp_plugin" to if (look.speakers != null) "${p.home}/config/speakers.dsp" else "",
         // Nothing written over the first seconds of a game: no "controller configured", no settings or remap "loaded",
@@ -2523,7 +2568,7 @@ object RetroPack {
      * picture drawn wider than that has [columns] halvings of its columns as well.
      */
     fun crt3dPreset(look: Look, p: Paths, halvings: Int, glsl: Boolean, beam: Boolean = false, group: String = "", native: Boolean = false,
-                    columns: Int = if (look.sharp) 0 else halvings): String {
+                    columns: Int = if (look.sharp) 0 else halvings, blend: Double = 0.0): String {
         val dir = "${p.home}/${Crt3d.DIR}"
         val stock = if (glsl) "$dir/${Crt3d.STOCK_GLSL}" else "${p.slang}/stock.slang"
         val crt = if (glsl) "$dir/${Crt3d.GLSL}" else "$dir/${Crt3d.SLANG}"
@@ -2536,16 +2581,26 @@ object RetroPack {
         // Dreamcast takes Timeline's steady version (SteadyBeam): Flycast hands over pictures unevenly while a game loads.
         val steady = group == "dreamcast"
         if (b == 1) { lines += beamPass(p, steady); lines += "scale_type0 = \"source\""; lines += "scale0 = \"1.0\"" }
+        var i = b
         for (j in 0 until halvings) {
-            val i = b + j
             lines += "shader$i = \"$stock\""
             lines += "filter_linear$i = \"true\""
             // With linear filtering, half the size samples exactly between texels: each pass averages a 2 x 2 block, or
             // two rows alone once the columns are back to the width kept (the first [columns] passes halve them too).
             lines += "scale_type_x$i = \"source\""; lines += "scale_x$i = \"" + (if (j < columns) "0.5" else "1.0") + "\""
             lines += "scale_type_y$i = \"source\""; lines += "scale_y$i = \"0.5\""
+            i += 1
+            // The video chip's blend between lines ([ViBlend], OpenGL only), after the first halving: [blend] is the rows
+            // to each of the game's lines in the picture the core hands over, so half that here.
+            if (j == 0 && glsl && blend > 0.0) {
+                lines += "shader$i = \"$dir/${ViBlend.GLSL}\""
+                lines += "filter_linear$i = \"true\""
+                lines += "scale_type$i = \"source\""; lines += "scale$i = \"1.0\""
+                params += "tl_rows = \"" + String.format(java.util.Locale.US, "%.4f", blend / 2) + "\""
+                i += 1
+            }
         }
-        var c = b + halvings
+        var c = i
         // The signal, at the console's own lines. A picture at the console's own size (Saturn) takes the collection's NTSC
         // filter; the others take Timeline's. Its colour and luma softening are set in parts of a television line (tl_width
         // 320 for every console), so each console gets the same television.
@@ -2966,6 +3021,12 @@ object RetroPack {
             // times, both runs, still 60 refreshes a second. Turok 2, Conker and Banjo-Tooie gained little or nothing
             // (already at their own most), so they keep the console's speed.
             "Jet Force Gemini (USA)" to mapOf("mupen64plus-CountPerOpDenomPot" to "2"),
+            // New Tetris draws each background as many thin strips. At eight times GLideN64 left a line at every join, so
+            // the pictures behind the well had bright bars every fourth line or so while the 3D blocks, which have no joins,
+            // were clean. Its own fixes for this: strips drawn at the console's own size, their corners made continuous,
+            // and texture reads kept inside each strip. Compared from the same place in the demo, the bars were gone.
+            NEW_TETRIS to mapOf("mupen64plus-EnableNativeResTexrects" to "Optimized", "mupen64plus-CorrectTexrectCoords" to "Force",
+                "mupen64plus-EnableTexCoordBounds" to "True"),
         )
         val shake = (1..4).associate { "mupen64plus-pak$it" to "rumble" }
         (rumbleGames + own.keys).associateWith { (if (it in rumbleGames) shake else emptyMap()) + own[it].orEmpty() }
@@ -2980,6 +3041,15 @@ object RetroPack {
      * flicker in its menus (its levels themselves held eight with none late).
      */
     val n64FourTimes: Set<String> = setOf("Pokemon Snap (USA)", "GoldenEye 007 (USA)")
+
+    /**
+     * Nintendo 64 games that draw more lines than the television shows, which the video chip blended together as it
+     * spread them out ([ViBlend]): the rows to each of the game's lines in the 1920 GLideN64 hands over, eight to a
+     * television line. New Tetris draws a 400 x 300 picture and shows 298 of its lines on 237 (its video registers: y
+     * scale 1.26). Without the blend its bars came every fourth line.
+     */
+    val n64Blend: Map<String, Double> = mapOf(NEW_TETRIS to 8.0 * 237 / 298)
+    const val NEW_TETRIS = "New Tetris, The (USA)"
 
     /**
      * GoldenEye and Perfect Dark on two sticks ([dualStick], Look.n64Modern): the core's dead zone 5% instead of 15%, and
@@ -3290,6 +3360,10 @@ object RetroPack {
                 if (look.crt3dSlang) out["Mupen64Plus-Next/$stem.slangp"] = crt3dPreset(look, p, 2, glsl = false, beam = n64Parallel(look), group = "n64")
                 out["Mupen64Plus-Next/$stem.glslp"] = crt3dPreset(look, p, 2, glsl = true, group = "n64")
             }
+            // A game with more lines than the television shows: its own preset, with the video chip's blend (OpenGL only;
+            // ParaLLEl under Vulkan draws the chip itself).
+            for ((stem, rows) in n64Blend) if (look.lighter["n64/$stem"] != true && stem !in n64FourTimes)
+                out["Mupen64Plus-Next/$stem.glslp"] = crt3dPreset(look, p, n64, glsl = true, group = "n64", columns = n64Columns, blend = rows)
         }
         // Dreamcast has two ways to draw. Vulkan is the fast one. OpenGL is the fallback, and RetroArch has to be
         // started in OpenGL for the core to be offered it. Always written, so switching back switches back.
@@ -3416,6 +3490,11 @@ object RetroPack {
         }
         // WarioWare: Twisted! is played by turning the handheld: RetroArch hands cores the motion sensors only when asked.
         out["mGBA/WarioWare - Twisted! (USA).cfg"] = cfg(mapOf("input_sensors_enable" to "true"))
+        // Buttons: each controller's own file on a Retroid handheld, and what each button does by system, over everything above.
+        if (look.retroidPads) out.putAll(Buttons.autoconfigFiles(look.taught, look.padNames))
+        Buttons.withSystemMaps(out, look.buttonMaps, Catalog.systems.associate { s ->
+            s.id to s.emulators.filter { it.startsWith("ra:") }.map { Emulators.coreName(it.removePrefix("ra:")) }.distinct()
+        }, look.systemFolders)
         return out
     }
 
@@ -3829,8 +3908,255 @@ object ChargeHold {
     val modes = listOf("Always to 100%", "Smart")
 
     /** [inUse]: a game, or another app on screen. [idleMs]: real time since the last use. */
-    fun wanted(mode: String, plugged: Boolean, inUse: Boolean, idleMs: Long): Boolean =
-        mode == "Smart" && plugged && !inUse && idleMs >= REST_MS
+    fun wanted(mode: String, plugged: Boolean, inUse: Boolean, idleMs: Long, fullOnce: Int = FULL_OFF): Boolean =
+        fullOnce == FULL_OFF && mode == "Smart" && plugged && !inUse && idleMs >= REST_MS
+
+    /** Charge to 100% this time: asked, then seen on the charger, then off again once the charger comes off. */
+    const val FULL_OFF = 0
+    const val FULL_ASKED = 1
+    const val FULL_CHARGING = 2
+    fun fullNext(state: Int, plugged: Boolean): Int = when {
+        state == FULL_ASKED && plugged -> FULL_CHARGING
+        state == FULL_CHARGING && !plugged -> FULL_OFF
+        state !in FULL_OFF..FULL_CHARGING -> FULL_OFF
+        else -> state
+    }
+}
+
+/**
+ * Buttons by controller and by system.
+ *
+ * By controller, on Retroid's handhelds only ([retroid]): any controller can be taught once, a button at a time, and is
+ * known by its name from then on, wherever and whenever it connects. There every external controller reaches Android
+ * under the built-in controls' own numbers (2022:3001), so RetroArch gave them all its file for the built-in controls; a
+ * taught one gets a file of its own, with its name and those numbers, which RetroArch prefers (name and numbers both
+ * matching beats numbers alone). The teaching is kept on the card (_timeline/controllers), so it survives a reinstall,
+ * and Dolphin's profiles use it too. On other devices each controller keeps its own numbers and RetroArch's own file
+ * for it, and nothing here changes that.
+ *
+ * By system, on any device: what each button does there, as another of its buttons (A does B). RetroArch reads it as a
+ * remap for the system's folder, laid over the launcher's own layouts for that system and its games; Dolphin's
+ * GameCube and Wii profiles take it too.
+ */
+object Buttons {
+    /** A RetroPad button by a Retroid handheld's labels (A on the right, B at the bottom), with RetroArch's number for it,
+     *  the Android key the built-in controls send for it, and Dolphin's name for that key. */
+    data class Button(val key: String, val label: String, val id: Int, val code: Int, val dolphin: String, val where: String)
+
+    val all = listOf(
+        Button("a", "A", 8, 96, "Button A", "the right one of the four"),
+        Button("b", "B", 0, 97, "Button B", "the bottom one of the four"),
+        Button("x", "X", 9, 99, "Button X", "the top one of the four"),
+        Button("y", "Y", 1, 100, "Button Y", "the left one of the four"),
+        Button("l", "L1", 10, 102, "Button L1", "the left shoulder"),
+        Button("r", "R1", 11, 103, "Button R1", "the right shoulder"),
+        Button("l2", "L2", 12, 104, "Button L2", "the left trigger"),
+        Button("r2", "R2", 13, 105, "Button R2", "the right trigger"),
+        Button("l3", "L3", 14, 106, "Button L3", "pressing the left stick in"),
+        Button("r3", "R3", 15, 107, "Button R3", "pressing the right stick in"),
+        Button("start", "Start", 3, 108, "Start", "Start"),
+        Button("select", "Select", 2, 109, "Select", "Select"),
+    )
+    const val NOTHING = "nothing"
+    fun byKey(k: String): Button? = all.firstOrNull { it.key == k }
+    fun dolphinName(code: Int): String? = all.firstOrNull { it.code == code }?.dolphin
+
+    // --- By controller ---
+
+    const val OWN = "Retroid Pocket Controller"
+    const val DIR = "controllers"
+    /** The numbers every controller reaches Android under on a Retroid handheld (0x2022, 0x3001). */
+    const val VENDOR = 8226
+    const val PRODUCT = 12289
+
+    /** A Retroid handheld: its controls (and every controller connected to it) come in under Retroid's numbers. */
+    fun retroid(pads: List<Players.Pad>): Boolean = pads.any { it.vendor == VENDOR && it.product == PRODUCT }
+
+    fun fileName(name: String): String = name.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifEmpty { "Controller" } + ".txt"
+
+    fun padText(name: String, taught: Map<String, Int>): String =
+        "# Taught in Timeline: the key this controller sends for each of the handheld's buttons. Delete this file to forget it.\n" +
+            "name = $name\n" + all.mapNotNull { b -> taught[b.key]?.let { "${b.key} = $it\n" } }.joinToString("")
+
+    fun parsePad(text: String): Pair<String, Map<String, Int>>? {
+        val kv = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") && '=' in it }
+            .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+        val name = kv["name"]?.takeIf { it.isNotEmpty() } ?: return null
+        return name to all.mapNotNull { b -> kv[b.key]?.toIntOrNull()?.let { b.key to it } }.toMap()
+    }
+
+    /** RetroArch's file for one controller: the built-in controls' layout (their file as RetroArch ships it), with what was taught. */
+    fun autoconfig(name: String, taught: Map<String, Int> = emptyMap(), display: String = name): String {
+        fun code(k: String) = (taught[k] ?: byKey(k)!!.code).toString()
+        val lines = listOf(
+            "input_driver" to "android", "input_device" to name, "input_device_display_name" to display,
+            "input_vendor_id" to "$VENDOR", "input_product_id" to "$PRODUCT",
+            "input_up_btn" to "h0up", "input_down_btn" to "h0down", "input_left_btn" to "h0left", "input_right_btn" to "h0right",
+            "input_a_btn" to code("a"), "input_b_btn" to code("b"), "input_x_btn" to code("x"), "input_y_btn" to code("y"),
+            "input_l_btn" to code("l"), "input_r_btn" to code("r"),
+            // The triggers are axes on the built-in controls; a controller whose triggers send a key was taught that key as well.
+            "input_l2_axis" to "+8", "input_r2_axis" to "+9",
+            "input_l2_btn" to (taught["l2"]?.toString() ?: "nul"), "input_r2_btn" to (taught["r2"]?.toString() ?: "nul"),
+            "input_l3_btn" to code("l3"), "input_r3_btn" to code("r3"), "input_start_btn" to code("start"), "input_select_btn" to code("select"),
+            "input_l_x_plus_axis" to "+0", "input_l_x_minus_axis" to "-0", "input_l_y_plus_axis" to "+1", "input_l_y_minus_axis" to "-1",
+            "input_r_x_plus_axis" to "+2", "input_r_x_minus_axis" to "-2", "input_r_y_plus_axis" to "+3", "input_r_y_minus_axis" to "-3",
+        )
+        return lines.joinToString("") { (k, v) -> "$k = \"$v\"\n" }
+    }
+
+    /**
+     * The folder RetroArch reads controller files from on a Retroid handheld (set as joypad_autoconfig_dir): the built-in
+     * controls' own, then one for every taught controller and one for every other controller connected now. Each matches
+     * its controller by name and number, so it wins outright and the order RetroArch happens to read them in never
+     * decides anything.
+     */
+    fun autoconfigFiles(taught: Map<String, Map<String, Int>>, connected: List<String>): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        out["autoconfig/android/Retroid_Pocket_Controller.cfg"] = autoconfig(OWN, display = "Retroid Pocket")
+        for (name in (taught.keys + connected).filter { it != OWN }.distinct())
+            out["autoconfig/android/Timeline_" + fileName(name).removeSuffix(".txt") + ".cfg"] = autoconfig(name, taught[name].orEmpty())
+        return out
+    }
+
+    // --- By system ---
+
+    fun parseMap(s: String): Map<String, String> = s.split(';').mapNotNull { e ->
+        val k = e.substringBefore('=').trim()
+        val v = e.substringAfter('=', "").trim()
+        if (byKey(k) != null && (byKey(v) != null || v == NOTHING) && k != v) k to v else null
+    }.toMap()
+
+    fun mapText(m: Map<String, String>): String = all.mapNotNull { b -> m[b.key]?.takeIf { it != b.key }?.let { "${b.key}=$it" } }.joinToString(";")
+
+    /** "A does B, Start does nothing", or "As usual". */
+    fun describe(m: Map<String, String>): String = if (m.isEmpty()) "As usual" else
+        all.mapNotNull { b -> m[b.key]?.let { v -> "${b.label} " + if (v == NOTHING) "nothing" else (byKey(v)?.label ?: v) } }.joinToString(", ")
+
+    /**
+     * A remap with the system's own choices laid over [under] (the launcher's remap for that core or game, or none):
+     * a button set to do another's job sends whatever that other one sends there. Every face, shoulder, stick and
+     * Start or Select line is written for players 1 to 4 (a merge keeps any line it is not given); the rest of
+     * [under] is kept as it was.
+     */
+    fun remap(user: Map<String, String>, under: String): String {
+        val kv = LinkedHashMap<String, String>()
+        for (line in under.lines()) {
+            val k = line.substringBefore('=').trim()
+            if (k.isNotEmpty() && '=' in line) kv[k] = line.substringAfter('=').trim().trim('"')
+        }
+        val mine = (1..4).flatMap { n -> all.map { "input_player${n}_btn_${it.key}" } }.toSet()
+        val rest = kv.filterKeys { it !in mine }
+        val out = StringBuilder()
+        for ((k, v) in rest) out.append("$k = \"$v\"\n")
+        for (n in 1..4) for (b in all) {
+            val does = user[b.key] ?: b.key
+            val v = if (does == NOTHING) "-1" else kv["input_player${n}_btn_$does"] ?: byKey(does)!!.id.toString()
+            out.append("input_player${n}_btn_${b.key} = \"$v\"\n")
+        }
+        return out.toString()
+    }
+
+    /**
+     * The system's choices put into RetroArch's remaps: one for the system's folder in each of its cores (which RetroArch
+     * reads before the core's own), and into each game remap of a core that serves that one system only. RetroArch
+     * knows a folder's remap by the name of the folder the game sits in, so there is one for the system's own name and
+     * one for each name in [folders] (a library laid out as "megadrive" or "PS1", or a game in a folder of its own).
+     */
+    fun withSystemMaps(files: MutableMap<String, String>, maps: Map<String, Map<String, String>>, cores: Map<String, List<String>>,
+                       folders: Map<String, List<String>> = emptyMap()) {
+        val served = cores.flatMap { (sys, cs) -> cs.map { it to sys } }.groupBy({ it.first }, { it.second })
+        for ((sys, user) in maps) {
+            if (user.isEmpty()) continue
+            val names = (listOf(sys) + folders[sys].orEmpty()).distinct()
+            for (core in cores[sys].orEmpty()) {
+                val folder = "remaps/$core/"
+                val own = names.map { folder + "$it.rmp" }.toSet()
+                if (served[core].orEmpty().distinct() == listOf(sys))
+                    for (k in files.keys.filter { it.startsWith(folder) && it != folder + "$core.rmp" && it !in own })
+                        files[k] = remap(user, files.getValue(k))
+                for (k in own) files[k] = remap(user, files[k] ?: files[folder + "$core.rmp"] ?: "")
+            }
+        }
+    }
+}
+
+/**
+ * The clock on a Retroid handheld. Its clock chip runs off the main battery, so a battery run completely flat resets it,
+ * and Android then starts from the date its software was built (the time detector's lower bound). With Wi-Fi off
+ * nothing set it right again (seen on a Retroid Pocket Nova: automatic time off, Wi-Fi off, the chip's own count 22
+ * days from 1970). The launcher notes the time as it goes, and with the clock guard on puts a clock that has gone back
+ * to the last time it saw, at start: still behind by however long the battery was flat, but not by months.
+ */
+object ClockCare {
+    /** How far the clock may seem to have gone back before it counts as reset (a network correction moves it a little). */
+    const val SLACK_MS = 10 * 60_000L
+    /** The time to put the clock to, or null when it has not gone back. */
+    fun restore(now: Long, seen: Long): Long? = if (seen > 0 && now < seen - SLACK_MS) seen else null
+    /** The clock moved by [step] of [unit] ("day", "hour", "minute"), as the date and time page does it. */
+    fun shifted(now: Long, unit: String, step: Int): Long = now + step * when (unit) {
+        "day" -> 86_400_000L
+        "hour" -> 3_600_000L
+        else -> 60_000L
+    }
+    /** Only a time in reach of today's: 2020 to 2100, so a slip can never send it to 1970. */
+    fun settable(ms: Long): Boolean = ms in 1_577_836_800_000L..4_102_444_800_000L
+}
+
+/**
+ * The two guards against finding the handheld flat, each behind a switch of its own on the Battery page, off until
+ * switched on like every control that goes through the maker's service.
+ *
+ * Untouched: after [UNTOUCHED_MS] with no button, stick or touch the screen goes to sleep, even in a game that holds it
+ * on. This is Android's own inattentive sleep (the secure setting attentive_timeout, tried on a Retroid Pocket Nova): it
+ * shows a notice for the last 30 seconds, and any press keeps the handheld awake. Off while the rest screen is meant to
+ * stay lit.
+ *
+ * Asleep: on battery a Retroid Pocket Nova still loses about 1% an hour with the screen off (50 to 100 minutes for each
+ * 1%), flat in three to five days. Asleep for [OFF_AFTER_MS] with nothing open, it powers off instead. A game that may
+ * still be open in an emulator keeps it asleep until [LAST]%, just before Android would shut it down anyway, so a place
+ * not yet saved is kept as long as there is battery to keep it.
+ */
+object SleepCare {
+    const val UNTOUCHED_MS = 15 * 60_000L
+    const val OFF_AFTER_MS = 8 * 3_600_000L
+    const val LOW = 15
+    const val LAST = 5
+    /** Asleep at least this long before a low battery alone powers it off: a short nap is never cut. */
+    const val SETTLE_MS = 3_600_000L
+    /** How often it looks while on battery. */
+    const val LOOK_MS = 3_600_000L
+    /** Awake this long since the mark (beyond the few seconds an hour Android wakes by itself): it was in use. */
+    const val IN_USE_MS = 10 * 60_000L
+
+    /** When the sleep began, in real time and in awake time (which stops while the handheld sleeps). */
+    data class Mark(val elapsed: Long, val uptime: Long)
+
+    fun attentive(on: Boolean, restLit: Boolean): Long = if (on && !restLit) UNTOUCHED_MS else -1L
+
+    /** How long it has slept since [mark], or null when it was awake long enough in between to have been in use. */
+    fun asleepFor(mark: Mark, elapsed: Long, uptime: Long): Long? {
+        val real = elapsed - mark.elapsed
+        if (real < 0 || uptime < mark.uptime) return null
+        return if (uptime - mark.uptime > IN_USE_MS + real / 50) null else real
+    }
+
+    fun powerOff(asleepMs: Long, gameOpen: Boolean, level: Int): Boolean = when {
+        asleepMs < SETTLE_MS -> false
+        gameOpen -> level in 0..LAST
+        else -> asleepMs >= OFF_AFTER_MS || level in 0..LOW
+    }
+
+    /** The next look: on the hour, or at the eight-hour mark when that comes sooner. */
+    fun nextLook(asleepMs: Long, gameOpen: Boolean): Long =
+        if (gameOpen || asleepMs >= OFF_AFTER_MS) LOOK_MS else (OFF_AFTER_MS - asleepMs).coerceIn(60_000L, LOOK_MS)
+
+    fun encode(m: Mark): String = "${m.elapsed},${m.uptime}"
+    fun decode(s: String): Mark? {
+        val p = s.split(',')
+        val e = p.getOrNull(0)?.toLongOrNull() ?: return null
+        val u = p.getOrNull(1)?.toLongOrNull() ?: return null
+        return Mark(e, u)
+    }
 }
 
 object BatteryEstimate {

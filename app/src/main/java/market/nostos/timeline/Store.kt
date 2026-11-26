@@ -704,6 +704,7 @@ object Runner {
         put(File(dir, Signal.SLANG), Signal.slang)
         put(File(dir, SteadyBeam.SLANG), SteadyBeam.slang)
         put(File(dir, Signal.GLSL), Signal.glsl)
+        put(File(dir, ViBlend.GLSL), ViBlend.glsl)
         put(File(dir, Colour.SLANG), Colour.slang)
         put(File(dir, Colour.GLSL), Colour.glsl)
         put(File(dir, GenesisDac.SLANG), GenesisDac.slang)
@@ -894,6 +895,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         batteryLevel = level
         batteryText = BatteryEstimate.text(level, charging, BatteryEstimate.hoursLeft(kept), chargeHeld)
         applyCharge()                                      // unplugged: the limit comes off at once
+        if (!charging) SleepGuard.keepWatch(ctx)
+        ClockGuard.note(ctx)
     }
     var settingsTick by mutableStateOf(0)   // bumps when a stored choice changes, so menus redraw
 
@@ -1013,6 +1016,9 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         // Places kept before this version first ran were made before Xenoblade's hold changed (DolphinPack.nunchukFirst).
         if (prefs.long("hold.since", 0L) == 0L) prefs.put("hold.since", System.currentTimeMillis())
         SoundService.sync(ctx)
+        SleepGuard.watchScreen(ctx.applicationContext)
+        SleepGuard.keepWatch(ctx)
+        ClockGuard.check(ctx) { msg -> scope.launch { say(msg) } }
         forgetEarlyGlFallbacks()
         Installs.onResult = ::installAnswered
         // Asking the handheld what it offers is not needed for the first picture: do it off to one side.
@@ -1099,7 +1105,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
 
     // ---- RetroArch, set up ahead of time ---------------------------------------------------
 
-    fun look(): Look = Look(
+    fun look(): Look = retroid().let { retroid -> Look(
         crt = prefs.str("ra.crt", "GDV Mini Ultra").takeIf { it in RetroPack.crtChoices } ?: "GDV Mini Ultra",
         motion = prefs.str("ra.motion", "Beam simulator").takeIf { it in RetroPack.motionChoices } ?: "Beam simulator",
         motion3d = prefs.str("ra.motion3d", "Beam simulator").takeIf { it in RetroPack.motionChoices } ?: "Beam simulator",
@@ -1125,11 +1131,11 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         achievements = if (prefs.bool("ra.cheevos", false) && prefs.str("ra.cheevosUser").isNotBlank())
             Achievements(prefs.str("ra.cheevosUser").trim(), prefs.str("ra.cheevosPass"), prefs.bool("ra.hardcore", false), prefs.bool("ra.cheevosFresh", false)) else null,
         m1 = prefs.int("m1.code", 0), m2 = prefs.int("m2.code", 0),
-        extras = Catalog.systems.mapNotNull { s ->
-            val usual = Hotkeys.usual(s.id)
-            val mine = (prefs.str("m1." + s.id).takeIf { it in Hotkeys.actions } ?: usual.first) to (prefs.str("m2." + s.id).takeIf { it in Hotkeys.actions } ?: usual.second)
-            if (mine == usual) null else s.id to mine
-        }.toMap(),
+        extras = extras(),
+        retroidPads = retroid,
+        taught = if (retroid) taughtPads() else emptyMap(), padNames = if (retroid) teachable() else emptyList(),
+        buttonMaps = Catalog.systems.associate { it.id to buttonMap(it.id) }.filterValues { it.isNotEmpty() },
+        systemFolders = systemFolders(),
         lighter = prefs.strings("light.ever").filter { !it.startsWith("gc/") && !it.startsWith("wii/") }
             .associate { key -> (key.substringBefore('/') + "/" + Titles.stem(key.substringAfter('/'))) to prefs.bool("light:$key", false) },
         // Dolphin: a lighter game's line is set; one switched off is taken out once ("light.undo"), and after that the
@@ -1141,7 +1147,14 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         dolphinGlCodes = prefs.strings("dolgl.ever").filter { drawsWithGl(it) || it in prefs.strings("dolgl.undo") }
             .mapNotNull { key -> find(key)?.let(::codeOf)?.let { it to drawsWithGl(key) } }
             .groupBy({ it.first }, { it.second }).mapValues { (_, v) -> v.any { it } },
-   )
+   ) }
+
+    /** Per system: what M1 and M2 do, where it differs from the usual. */
+    private fun extras(): Map<String, Pair<String, String>> = Catalog.systems.mapNotNull { s ->
+        val usual = Hotkeys.usual(s.id)
+        val mine = (prefs.str("m1." + s.id).takeIf { it in Hotkeys.actions } ?: usual.first) to (prefs.str("m2." + s.id).takeIf { it in Hotkeys.actions } ?: usual.second)
+        if (mine == usual) null else s.id to mine
+    }.toMap()
 
     /** True unless two of the controllers connected now have the same name (RetroArch would mix them up on reconnecting). */
     private fun padNamesDiffer(): Boolean = runCatching {
@@ -1252,10 +1265,113 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     }
 
     /** What M1 and M2 do on a system: the player's choice if there is one, else the usual. */
-    fun extraButtons(system: String): Pair<String, String> = look().extras[system] ?: Hotkeys.usual(system)
+    fun extraButtons(system: String): Pair<String, String> = extras()[system] ?: Hotkeys.usual(system)
 
     /** Set while the Controls page is waiting for M1 or M2 to be pressed; the next button press is recorded as that button. */
     var learning by mutableStateOf<String?>(null)
+
+    // ---- buttons: each controller taught once, and what each button does by system ([Buttons]) ----------------
+
+    /** A controller being taught: which of [Buttons.all] is asked for now, and the keys it has sent so far. */
+    data class Teach(val name: String, val step: Int, val got: Map<String, Int>)
+    var teaching by mutableStateOf<Teach?>(null)
+    @Volatile private var taughtCache: Pair<File, Map<String, Map<String, Int>>>? = null
+    @Volatile private var retroidSeen = false
+
+    /** A Retroid handheld, whose controllers all come in under its own numbers: the only place controllers are taught. */
+    fun retroid(): Boolean = retroidSeen || Buttons.retroid(pads()).also { if (it) retroidSeen = true }
+
+    private fun padDir(): File = File(meta.dir, Buttons.DIR)
+
+    /** Every taught controller, read from the card once and kept (read again for another card). */
+    fun taughtPads(): Map<String, Map<String, Int>> {
+        val dir = padDir()
+        taughtCache?.takeIf { it.first == dir }?.let { return it.second }
+        return runCatching {
+            dir.listFiles { f -> f.name.endsWith(".txt") }.orEmpty().mapNotNull { Buttons.parsePad(it.readText()) }.toMap()
+        }.getOrDefault(emptyMap()).also { taughtCache = dir to it }
+    }
+
+    fun buttonMap(system: String): Map<String, String> = Buttons.parseMap(prefs.str("map.$system"))
+    fun setButtonMap(system: String, m: Map<String, String>) {
+        prefs.put("map.$system", Buttons.mapText(m))
+        buttonsChanged()
+    }
+
+    /** RetroArch reads its files at the next start; Dolphin's profiles are written now. */
+    private fun buttonsChanged() {
+        touchSettings()
+        writeDolphinSoon()
+    }
+
+    @Volatile private var foldersFor: Map<String, List<Game>>? = null
+    @Volatile private var foldersCache: Map<String, List<String>> = emptyMap()
+    /** The names of the folders each system's games sit in, which RetroArch knows a folder's remap by ([Buttons.withSystemMaps]). */
+    private fun systemFolders(): Map<String, List<String>> {
+        val lib = cardLibrary
+        if (lib !== foldersFor) {
+            foldersCache = lib.mapValues { (_, games) ->
+                games.mapNotNull { g -> File(g.path).parentFile?.name?.takeIf { it.isNotEmpty() && ':' !in it } }.distinct()
+            }
+            foldersFor = lib
+        }
+        return foldersCache
+    }
+
+    /** The external controllers connected now (the handheld's own controls are taught already). */
+    fun teachable(): List<String> = pads().filter { !Players.isOwn(it) }.map { it.name }.distinct()
+
+    fun teach(name: String) {
+        if (!retroid()) return
+        teaching = Teach(name, 0, emptyMap())
+        learning = "pad"                       // keeps the rest screen away, as for M1 and M2
+        touchSettings()
+    }
+
+    /** A key while teaching: from the controller being taught it is recorded; from the handheld's own controls, B stops and Start skips. */
+    fun teachKey(device: String?, code: Int) {
+        val t = teaching ?: return
+        if (device == t.name) {
+            if (code in t.got.values) return                 // already given to another button: press a different one
+            if (code in android.view.KeyEvent.KEYCODE_DPAD_UP..android.view.KeyEvent.KEYCODE_DPAD_CENTER) return   // the d-pad stays as it comes
+            teachNext(t.copy(got = t.got + (Buttons.all[t.step].key to code)))
+        } else when (code) {
+            android.view.KeyEvent.KEYCODE_BUTTON_B, android.view.KeyEvent.KEYCODE_BACK -> { teaching = null; learning = null; touchSettings() }
+            android.view.KeyEvent.KEYCODE_BUTTON_START -> teachNext(t)
+        }
+    }
+
+    private fun teachNext(t: Teach) {
+        if (t.step + 1 < Buttons.all.size) { teaching = t.copy(step = t.step + 1); touchSettings(); return }
+        teaching = null
+        learning = null
+        touchSettings()
+        if (t.got.isEmpty()) { say("Nothing was taught, so ${t.name} stays as it comes."); return }
+        val dir = padDir()
+        scope.launch(markWriter) {
+            val ok = runCatching {
+                dir.mkdirs()
+                val f = File(dir, Buttons.fileName(t.name))
+                val part = File(dir, f.name + ".part")
+                part.writeText(Buttons.padText(t.name, t.got))
+                if (!part.renameTo(f)) { f.delete(); check(part.renameTo(f)) }
+            }.isSuccess
+            withContext(Dispatchers.Main) {
+                taughtCache = null
+                if (ok) { say("${t.name} is taught. It is known by name from now on."); buttonsChanged() }
+                else say("That could not be written to the card. Is it in?")
+            }
+        }
+    }
+
+    /** Back to how the controller came: its file on the card is taken out. */
+    fun forgetPad(name: String) {
+        val f = File(padDir(), Buttons.fileName(name))
+        scope.launch(markWriter) {
+            runCatching { f.delete() }
+            withContext(Dispatchers.Main) { taughtCache = null; say("$name is back to how it came."); buttonsChanged() }
+        }
+    }
 
     fun learned(code: Int) {
         val which = learning ?: return
@@ -2270,6 +2386,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     private suspend fun tvMode() {
         val tvs = tvDisplays()
         attachmentNow = attachment()
+        DockQuiet.apply(ctx, tvs.isNotEmpty())
         tvNow = tvs.firstOrNull()?.mode?.let { "${it.physicalWidth} x ${it.physicalHeight}, ${Math.round(it.refreshRate)} Hz" }.orEmpty()
         if (!device.bridge || tvHz == "auto") return
         var again = false
@@ -2613,7 +2730,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     var wake: () -> Unit = { if (current == Screen.Idle) pop() }
     /** Set by the activity: the rest screen's light and lock-screen behavior (resting, kept lit). */
     var applyRest: (Boolean, Boolean) -> Unit = { _, _ -> }
-    var restAlways by mutableStateOf(prefs.str("rest.always", "Always").takeIf { it in restModes } ?: "Always")
+    var restAlways by mutableStateOf(prefs.str("rest.always", "While charging").takeIf { it in restModes } ?: "While charging")
     val keepLit: Boolean get() = current == Screen.Idle && (restAlways == "Always" || (restAlways == "While charging" && charging)) &&
         (charging || batteryLevel !in 0..15) && !deviceSecure()
 

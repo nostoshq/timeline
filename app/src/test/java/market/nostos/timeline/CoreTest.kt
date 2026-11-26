@@ -436,9 +436,9 @@ class DeviceLogicTest {
 
     @Test fun everySystemHasAPowerProfileThatUsesAMakersFanMode() {
         for (s in Catalog.systems) assertTrue(Power.default(s.id).fan in setOf(Vendor.FAN_QUIET, Vendor.FAN_SMART, Vendor.FAN_SPORT))
-        assertEquals(Power.Light, Power.default("snes"))
-        assertEquals(Power.Balanced, Power.default("n64"))
-        assertEquals(Power.Strong, Power.default("ps2"))
+        // every system plays on Performance power, so no refresh waits for the chip to speed up
+        for (s in Catalog.systems) assertEquals(s.id, 1, Power.default(s.id).performance)
+        assertEquals(Vendor.FAN_SMART, Power.default("snes").fan)
         for (s in Catalog.systems) assertTrue(Power.default(s.id) != Power.High)        // held near top speed only by choice
         assertEquals(0, Power.resting.performance)                                     // the launcher: Standard, Smart
         assertEquals(Vendor.FAN_SMART, Power.resting.fan)
@@ -2509,6 +2509,33 @@ class ExtrasTest {
         assertTrue(files.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("mupen64plus-43screensize = \"2560x1920\""))
     }
 
+    @Test fun newTetrisGetsTheVideoChipsBlendBetweenLines() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val nt = "New Tetris, The (USA)"
+        val own = RetroPack.files(Look(), p).getValue("Mupen64Plus-Next/$nt.glslp")
+        // first halving, then the blend at half the rows (8 x 237 / 298 / 2), then the other two halvings, signal, color, CRT
+        assertTrue(own.contains("shaders = \"7\""))
+        assertTrue(own.contains("shader1 = \"/h/shaders/timeline/timeline-vi.glsl\""))
+        assertTrue(own.contains("tl_rows = \"3.1812\""))
+        assertTrue(own.contains("scale_y0 = \"0.5\"") && own.contains("scale_y2 = \"0.5\"") && own.contains("scale_y3 = \"0.5\""))
+        assertTrue(own.contains("shader6 = \"/h/shaders/timeline/crt-gdv-3d.glsl\""))
+        // every other game keeps the plain halvings
+        assertFalse(RetroPack.files(Look(), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.glslp").contains("timeline-vi"))
+        // run lighter, the core blends it itself: no preset of its own with the blend
+        assertFalse(RetroPack.files(Look(lighter = mapOf("n64/$nt" to true)), p)["Mupen64Plus-Next/$nt.glslp"].orEmpty().contains("timeline-vi"))
+        assertTrue(ViBlend.glsl.contains("uniform float tl_rows;"))
+    }
+
+    @Test fun newTetrisDrawsItsBackgroundStripsWithoutJoins() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val opt = RetroPack.files(Look(), p).getValue("Mupen64Plus-Next/${RetroPack.NEW_TETRIS}.opt")
+        for (line in listOf("mupen64plus-EnableNativeResTexrects = \"Optimized\"", "mupen64plus-CorrectTexrectCoords = \"Force\"",
+                "mupen64plus-EnableTexCoordBounds = \"True\""))
+            assertTrue(line, opt.contains(line))
+        // every other game keeps GLideN64's own
+        assertFalse(RetroPack.files(Look(), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("EnableTexCoordBounds = \"True\""))
+    }
+
     @Test fun shootersMadeForTheCButtonsGetTwinSticks() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val out = RetroPack.files(Look(), p)
@@ -2708,5 +2735,186 @@ class ExtrasTest {
         assertTrue(PsxCard.saves(ByteArray(10)).isEmpty())
         // Sega CD's cartridge memory, kept for each game, belongs to its game
         assertTrue(Saves.belongs("Shining Force CD (USA)_4Mbit_cart.brm", "Shining Force CD (USA)"))
+    }
+}
+
+class ClockCareTest {
+    private val nov26 = 1_795_700_000_000L      // 2026-11-26
+    private val jul22 = 1_784_679_253_000L      // a Retroid Pocket Nova's build date, where Android starts a reset clock
+
+    @Test fun aClockThatWentBackIsPutToTheLastTimeSeen() {
+        assertEquals(nov26, ClockCare.restore(jul22, nov26))
+        assertNull(ClockCare.restore(nov26 + 60_000L, nov26))                  // moving on as it should
+        assertNull(ClockCare.restore(nov26 - 5 * 60_000L, nov26))              // a network correction of a few minutes
+        assertNull(ClockCare.restore(jul22, 0L))                               // nothing seen yet
+    }
+
+    @Test fun theDateAndTimePageStepsByDayHourAndMinuteAndNeverLeavesReach() {
+        assertEquals(nov26 + 86_400_000L, ClockCare.shifted(nov26, "day", 1))
+        assertEquals(nov26 - 3_600_000L, ClockCare.shifted(nov26, "hour", -1))
+        assertEquals(nov26 + 60_000L, ClockCare.shifted(nov26, "minute", 1))
+        assertTrue(ClockCare.settable(nov26) && ClockCare.settable(jul22))
+        assertFalse(ClockCare.settable(1_939_336_000L))                        // 1970, the reset chip's own count
+        assertFalse(ClockCare.settable(5_000_000_000_000L))
+    }
+}
+
+class SleepCareTest {
+    private val h = 3_600_000L
+
+    @Test fun untouchedSleepIsFifteenMinutesUnlessTheRestScreenIsKeptLitOrItIsOff() {
+        assertEquals(15 * 60_000L, SleepCare.attentive(on = true, restLit = false))
+        assertEquals(-1L, SleepCare.attentive(on = true, restLit = true))
+        assertEquals(-1L, SleepCare.attentive(on = false, restLit = false))
+    }
+
+    @Test fun aLongSleepCountsButTimeInUseStartsItAgain() {
+        val mark = SleepCare.Mark(elapsed = 1_000L, uptime = 500L)
+        // Eight hours asleep, awake only the few minutes Android wakes by itself.
+        assertEquals(8 * h, SleepCare.asleepFor(mark, 1_000L + 8 * h, 500L + 6 * 60_000L))
+        // Picked up and played for half an hour in between: not one long sleep.
+        assertNull(SleepCare.asleepFor(mark, 1_000L + 8 * h, 500L + 30 * 60_000L))
+        // A restart in between (both clocks back near zero).
+        assertNull(SleepCare.asleepFor(mark, 200L, 100L))
+    }
+
+    @Test fun nothingOpenPowersOffAtEightHoursOrWhenLow() {
+        assertFalse(SleepCare.powerOff(7 * h, gameOpen = false, level = 60))
+        assertTrue(SleepCare.powerOff(8 * h, gameOpen = false, level = 60))
+        assertTrue(SleepCare.powerOff(2 * h, gameOpen = false, level = 15))
+        // A short nap is never cut, however low.
+        assertFalse(SleepCare.powerOff(30 * 60_000L, gameOpen = false, level = 3))
+    }
+
+    @Test fun aGameStillOpenKeepsItAsleepUntilFivePercent() {
+        assertFalse(SleepCare.powerOff(30 * h, gameOpen = true, level = 15))
+        assertFalse(SleepCare.powerOff(30 * h, gameOpen = true, level = 6))
+        assertTrue(SleepCare.powerOff(30 * h, gameOpen = true, level = 5))
+    }
+
+    @Test fun theNextLookLandsOnTheEightHourMark() {
+        assertEquals(h, SleepCare.nextLook(0L, gameOpen = false))
+        assertEquals(20 * 60_000L, SleepCare.nextLook(8 * h - 20 * 60_000L, gameOpen = false))
+        assertEquals(h, SleepCare.nextLook(7 * h + 59 * 60_000L + 59_000L, gameOpen = true))
+        assertEquals(60_000L, SleepCare.nextLook(8 * h - 1_000L, gameOpen = false))
+    }
+
+    @Test fun markRoundTrips() {
+        val m = SleepCare.Mark(123L, 45L)
+        assertEquals(m, SleepCare.decode(SleepCare.encode(m)))
+        assertNull(SleepCare.decode(""))
+    }
+
+    @Test fun chargeToFullOnceLastsUntilTheChargerComesOff() {
+        var s = ChargeHold.FULL_ASKED
+        s = ChargeHold.fullNext(s, plugged = false)               // asked before plugging in: still waiting
+        assertEquals(ChargeHold.FULL_ASKED, s)
+        s = ChargeHold.fullNext(s, plugged = true)
+        assertEquals(ChargeHold.FULL_CHARGING, s)
+        assertFalse(ChargeHold.wanted("Smart", plugged = true, inUse = false, idleMs = 2 * h, fullOnce = s))
+        s = ChargeHold.fullNext(s, plugged = false)
+        assertEquals(ChargeHold.FULL_OFF, s)
+        assertTrue(ChargeHold.wanted("Smart", plugged = true, inUse = false, idleMs = 2 * h, fullOnce = s))
+        assertEquals(ChargeHold.FULL_OFF, ChargeHold.fullNext(7, plugged = true))   // anything else stored: off
+    }
+
+    @Test fun everyEmulatorPackageCountsAsAPlaceAGameMayBeOpen() {
+        assertTrue(Emulators.packages.isNotEmpty())
+        assertTrue(Emulators.packages.none { '/' in it })
+    }
+}
+
+class ButtonsTest {
+    @Test fun aTaughtControllerGetsItsOwnFileThatRetroArchPrefers() {
+        val cfg = Buttons.autoconfig("Xbox Wireless Controller", mapOf("a" to 97, "b" to 96, "l2" to 104))
+        assertTrue(cfg.contains("input_device = \"Xbox Wireless Controller\""))
+        assertTrue(cfg.contains("input_vendor_id = \"8226\"") && cfg.contains("input_product_id = \"12289\""))
+        assertTrue(cfg.contains("input_a_btn = \"97\"") && cfg.contains("input_b_btn = \"96\""))
+        assertTrue(cfg.contains("input_x_btn = \"99\""))                  // not taught: as the built-in controls'
+        assertTrue(cfg.contains("input_l2_btn = \"104\"") && cfg.contains("input_r2_btn = \"nul\""))
+        assertTrue(cfg.contains("input_l2_axis = \"+8\""))
+    }
+
+    @Test fun everyConnectedControllerHasAFileOfItsOwnSoNoneTies() {
+        val files = Buttons.autoconfigFiles(mapOf("8BitDo Pro 2" to mapOf("a" to 97)), listOf("Xbox Wireless Controller", "Retroid Pocket Controller"))
+        assertEquals(setOf("autoconfig/android/Retroid_Pocket_Controller.cfg", "autoconfig/android/Timeline_8BitDo_Pro_2.cfg",
+            "autoconfig/android/Timeline_Xbox_Wireless_Controller.cfg"), files.keys)
+        assertTrue(files.getValue("autoconfig/android/Retroid_Pocket_Controller.cfg").contains("input_device = \"Retroid Pocket Controller\""))
+    }
+
+    @Test fun onlyARetroidHandheldGetsTheLaunchersOwnControllerFolder() {
+        val pads = listOf(Players.Pad("Retroid Pocket Controller", 1, false, 8226, 12289, true))
+        assertTrue(Buttons.retroid(pads))
+        assertFalse(Buttons.retroid(listOf(Players.Pad("Xbox Wireless Controller", 1, true, 1118, 2835, false))))
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        // Elsewhere RetroArch keeps its own folder of controller files, and none of the launcher's are written.
+        assertFalse(RetroPack.base(Look(), p).containsKey("joypad_autoconfig_dir"))
+        assertTrue(RetroPack.files(Look(padNames = listOf("Xbox Wireless Controller")), p).keys.none { it.startsWith("autoconfig/") })
+        val retroid = Look(retroidPads = true, padNames = listOf("Xbox Wireless Controller"))
+        assertEquals("/h/config/autoconfig", RetroPack.base(retroid, p)["joypad_autoconfig_dir"])
+        assertTrue(RetroPack.files(retroid, p).containsKey("autoconfig/android/Timeline_Xbox_Wireless_Controller.cfg"))
+    }
+
+    @Test fun aTaughtControllerRoundTripsThroughItsCardFile() {
+        val text = Buttons.padText("Nintendo Switch Pro Controller", mapOf("a" to 97, "b" to 96, "start" to 108))
+        assertEquals("Nintendo Switch Pro Controller" to mapOf("a" to 97, "b" to 96, "start" to 108), Buttons.parsePad(text))
+        assertEquals("Nintendo_Switch_Pro_Controller.txt", Buttons.fileName("Nintendo Switch Pro Controller"))
+    }
+
+    @Test fun systemChoicesRoundTripAndDropNoChange() {
+        val m = Buttons.parseMap("a=b;b=a;x=x;start=nothing;bogus=a")
+        assertEquals(mapOf("a" to "b", "b" to "a", "start" to "nothing"), m)
+        assertEquals("a=b;b=a;start=nothing", Buttons.mapText(m))
+        assertEquals("A B, B A, Start nothing", Buttons.describe(m))
+    }
+
+    @Test fun aSystemRemapIsLaidOverTheLaunchersOwn() {
+        // The launcher's remap sends R2 as R3 (melonDS); the player swaps A and B and sets Select to nothing.
+        val under = "input_player1_btn_r2 = \"15\"\ninput_libretro_device_p1 = \"1\"\n"
+        val out = Buttons.remap(mapOf("a" to "b", "b" to "a", "select" to Buttons.NOTHING, "l2" to "r2"), under)
+        assertTrue(out.contains("input_libretro_device_p1 = \"1\""))
+        assertTrue(out.contains("input_player1_btn_a = \"0\""))           // A does B's job: RetroPad B
+        assertTrue(out.contains("input_player1_btn_b = \"8\""))
+        assertTrue(out.contains("input_player1_btn_select = \"-1\""))
+        assertTrue(out.contains("input_player1_btn_l2 = \"15\""))         // L2 does R2's job, which the launcher made R3
+        assertTrue(out.contains("input_player1_btn_r2 = \"15\""))
+        assertTrue(out.contains("input_player4_btn_x = \"9\""))
+    }
+
+    @Test fun systemChoicesReachTheSystemsFolderAndItsOnlyCoresGames() {
+        val files = linkedMapOf(
+            "remaps/Mupen64Plus-Next/Mupen64Plus-Next.rmp" to "input_player1_btn_x = \"23\"\n",
+            "remaps/Mupen64Plus-Next/Doom 64 (USA) (Rev 1).rmp" to "input_player1_btn_y = \"18\"\n",
+            "remaps/Genesis Plus GX/Some Game.rmp" to "input_player1_btn_y = \"1\"\n",
+        )
+        Buttons.withSystemMaps(files, mapOf("n64" to mapOf("l" to "r"), "genesis" to mapOf("a" to "b")),
+            mapOf("n64" to listOf("Mupen64Plus-Next"), "genesis" to listOf("Genesis Plus GX"), "mastersystem" to listOf("Genesis Plus GX")))
+        assertTrue(files.getValue("remaps/Mupen64Plus-Next/n64.rmp").contains("input_player1_btn_x = \"23\""))
+        assertTrue(files.getValue("remaps/Mupen64Plus-Next/n64.rmp").contains("input_player1_btn_l = \"11\""))
+        assertTrue(files.getValue("remaps/Mupen64Plus-Next/Doom 64 (USA) (Rev 1).rmp").contains("input_player1_btn_l = \"11\""))
+        assertTrue(files.containsKey("remaps/Genesis Plus GX/genesis.rmp"))
+        // Genesis Plus GX also plays Master System games: its game remaps are not touched.
+        assertEquals("input_player1_btn_y = \"1\"\n", files.getValue("remaps/Genesis Plus GX/Some Game.rmp"))
+    }
+
+    @Test fun systemChoicesFollowTheFolderNamesOnTheCard() {
+        // A library laid out for another front end: Genesis games in "megadrive", one in a folder of its own.
+        val files = linkedMapOf<String, String>()
+        Buttons.withSystemMaps(files, mapOf("genesis" to mapOf("a" to "b")), mapOf("genesis" to listOf("Genesis Plus GX")),
+            mapOf("genesis" to listOf("megadrive", "Sonic 3 Complete")))
+        for (name in listOf("genesis", "megadrive", "Sonic 3 Complete"))
+            assertTrue(name, files.getValue("remaps/Genesis Plus GX/$name.rmp").contains("input_player1_btn_a = \"0\""))
+        assertEquals(3, files.size)
+    }
+
+    @Test fun dolphinProfilesFollowATaughtControllerAndTheSystemsChoices() {
+        val look = Look(taught = mapOf("Xbox Wireless Controller" to mapOf("a" to 97, "b" to 96)), buttonMaps = mapOf("gc" to mapOf("x" to "y", "y" to "x")))
+        val docs = DolphinPack.forPorts(look, listOf(listOf("Android/1/Retroid Pocket Controller", "Android/2/Xbox Wireless Controller")))
+        val gc = docs.first { it.path == "Config/Profiles/GCPad/Timeline.ini" }.text!!
+        assertTrue(gc, gc.contains("Buttons/A = `Android/1/Retroid Pocket Controller:Button A` | `Android/2/Xbox Wireless Controller:Button B`"))
+        assertTrue(gc, gc.contains("Buttons/X = `Android/1/Retroid Pocket Controller:Button Y` | `Android/2/Xbox Wireless Controller:Button Y`"))
+        // Nothing taught or chosen: the one-controller profile is exactly as before.
+        val plain = DolphinPack.forPorts(Look(), listOf(listOf("Android/1/Retroid Pocket Controller"))).first { it.path == "Config/Profiles/GCPad/Timeline.ini" }.text!!
+        assertTrue(plain, plain.contains("Buttons/A = `Button A`"))
     }
 }

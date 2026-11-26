@@ -562,7 +562,10 @@ object ChargeCare {
         // A time saved before a restart counts from that start and can be later than now: it is not a use.
         val used = maxOf(lastUse, prefs.long("charge.used", 0L).takeIf { it <= android.os.SystemClock.elapsedRealtime() } ?: 0L)
         val idle = android.os.SystemClock.elapsedRealtime() - used
-        val want = ChargeHold.wanted(prefs.str("dev.charge", ChargeHold.modes.first()), plugged, inUse, idle)
+        val was = prefs.int("charge.full", ChargeHold.FULL_OFF)
+        val full = ChargeHold.fullNext(was, plugged)
+        if (full != was) prefs.put("charge.full", full)
+        val want = ChargeHold.wanted(prefs.str("dev.charge", ChargeHold.modes.first()), plugged, inUse, idle, full)
         val actual = held(ctx)
         val ours = prefs.bool("charge.ours", false)
         // The record that the limit is the launcher's is written at once (not later in the background), and after a
@@ -1001,7 +1004,7 @@ object DiscKeys {
     }
 }
 
-/** The battery as the charger's driver reports it, for Settings, Device, Battery. Reading only. */
+/** The battery as the charger's driver reports it, for Settings, Battery. Reading only. */
 object BatteryInfo {
     data class Info(val fullMah: Int?, val designMah: Int?, val cycles: Int?, val tempC: Float?, val volts: Float?, val level: Int?, val plugged: Boolean) {
         /** Capacity now against the rating, in percent (a new battery can read a little over 100). */
@@ -1032,6 +1035,215 @@ class ChargeCheck : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent?) {
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) SoundService.sync(ctx)
+    }
+}
+
+/**
+ * Keeps the clock from going back when the battery runs flat ([ClockCare]), and sets it from the date and time page.
+ * The time is noted as the launcher goes; putting the clock back and keeping Android's automatic time on happen only
+ * with the clock guard switched on (Settings, Device, Date and time).
+ */
+object ClockGuard {
+    private const val SEEN = "clock.seen"
+    const val PREF = "clock.guard"
+    private val worker = Executors.newSingleThreadExecutor()
+
+    /** Set once the start's check has run: until then a note could overwrite the last good time with a reset clock's. */
+    @Volatile private var checked = false
+
+    /** The time now, kept as the last one seen. */
+    fun note(ctx: Context) { if (checked) Prefs(ctx).put(SEEN, System.currentTimeMillis()) }
+
+    /**
+     * At the launcher's start, with the guard on: automatic time on (it corrects the clock whenever Wi-Fi is on), and a
+     * clock that has gone back put to the last time seen, with a word to say so.
+     */
+    fun check(ctx: Context, say: (String) -> Unit) = worker.execute {
+        val prefs = Prefs(ctx)
+        if (!Bridge.present || !prefs.bool(PREF, false)) { checked = true; note(ctx); return@execute }
+        if (runCatching { Settings.Global.getInt(ctx.contentResolver, Settings.Global.AUTO_TIME) }.getOrDefault(0) != 1)
+            Bridge.run("settings put global auto_time 1")
+        val back = ClockCare.restore(System.currentTimeMillis(), prefs.long(SEEN, 0L))
+        if (back != null && set(back)) {
+            val at = java.text.SimpleDateFormat("EEE MMM d, h:mm a", java.util.Locale.US).format(java.util.Date(back))
+            say("The battery ran flat and the clock reset. It is set to $at, when the handheld was last on: Settings, Device, Date and time to correct it.")
+        }
+        checked = true
+        note(ctx)
+    }
+
+    /** Switched on from the date and time page: automatic time on now, rather than at the next start. */
+    fun switchedOn(ctx: Context) = worker.execute {
+        if (Bridge.present && runCatching { Settings.Global.getInt(ctx.contentResolver, Settings.Global.AUTO_TIME) }.getOrDefault(0) != 1)
+            Bridge.run("settings put global auto_time 1")
+    }
+
+    /** The clock set to [ms], through the maker's service. */
+    fun set(ms: Long): Boolean = ClockCare.settable(ms) && Bridge.run("cmd alarm set-time $ms")
+
+    /** One step on the date and time page. */
+    fun shift(ctx: Context, unit: String, step: Int, done: () -> Unit) = worker.execute {
+        if (set(ClockCare.shifted(System.currentTimeMillis(), unit, step))) note(ctx)
+        Handler(Looper.getMainLooper()).post(done)
+    }
+}
+
+/**
+ * The doing part of [SleepCare], on a device with the maker's service. Untouched: keeps Android's inattentive sleep set
+ * as the switch and the rest screen want it. Asleep: while on battery an alarm looks once an hour (one wake of a second
+ * or so, against the dozen an hour Android makes by itself), and powers the handheld off when [SleepCare.powerOff] says
+ * so. The sleep is marked as it begins when the launcher is there to see it, and otherwise at the first look with the
+ * screen off.
+ */
+object SleepGuard {
+    private const val MARK = "sleep.mark"
+    private const val DUE = "sleep.due"
+    @Volatile private var attentiveSet: Long? = null
+    private val worker = Executors.newSingleThreadExecutor()
+
+    fun untouched(ctx: Context, restLit: Boolean) {
+        val on = Prefs(ctx).bool("sleep.untouched", false)
+        val want = SleepCare.attentive(on, restLit)
+        if (attentiveSet == want || !Bridge.present) return
+        // Never switched on here: Android's own setting is left exactly as it is.
+        if (attentiveSet == null && !on && !Prefs(ctx).bool("sleep.untouchedEver", false)) return
+        attentiveSet = want
+        if (on) Prefs(ctx).put("sleep.untouchedEver", true)
+        worker.execute { if (!Bridge.run("settings put secure attentive_timeout $want")) attentiveSet = null }
+    }
+
+    private fun intent(ctx: Context) = PendingIntent.getBroadcast(ctx, 8, Intent(ctx, SleepCheck::class.java),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    private fun arm(ctx: Context, inMs: Long) {
+        val am = ctx.getSystemService(android.app.AlarmManager::class.java) ?: return
+        val at = android.os.SystemClock.elapsedRealtime() + inMs
+        Prefs(ctx).put(DUE, at)
+        // A window rather than an exact time: allowed without asking, and ten minutes either way changes nothing here.
+        runCatching { am.setWindow(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP, at, 10 * 60_000L, intent(ctx)) }
+    }
+
+    private fun stop(ctx: Context) {
+        ctx.getSystemService(android.app.AlarmManager::class.java)?.cancel(intent(ctx))
+        Prefs(ctx).put(DUE, 0L)
+    }
+
+    private fun plugged(ctx: Context): Boolean = runCatching {
+        ctx.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+    }.getOrDefault(false)
+
+    private fun level(ctx: Context): Int = runCatching {
+        ctx.getSystemService(android.os.BatteryManager::class.java)?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    }.getOrNull() ?: -1
+
+    private fun now() = SleepCare.Mark(android.os.SystemClock.elapsedRealtime(), android.os.SystemClock.uptimeMillis())
+
+    /** On battery with the guard on: makes sure a look is coming, without pushing back one already due. */
+    fun keepWatch(ctx: Context) {
+        val prefs = Prefs(ctx)
+        if (!prefs.bool("sleep.off", false) || !Bridge.present) { stop(ctx); return }
+        if (plugged(ctx)) { stop(ctx); return }
+        val due = prefs.long(DUE, 0L)
+        val left = due - android.os.SystemClock.elapsedRealtime()
+        if (left <= 0 || left > SleepCare.LOOK_MS + 60_000L) arm(ctx, SleepCare.LOOK_MS)
+    }
+
+    @Volatile private var watching = false
+    /** Marks each sleep as it begins and ends, for as long as the launcher is running (once per run). */
+    fun watchScreen(app: Context) {
+        if (watching) return
+        watching = true
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                when (i?.action) { Intent.ACTION_SCREEN_OFF -> asleep(app); Intent.ACTION_SCREEN_ON -> awake(app) }
+            }
+        }
+        val f = android.content.IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) }
+        runCatching { androidx.core.content.ContextCompat.registerReceiver(app, r, f, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED) }
+            .onFailure { watching = false }
+    }
+
+    /** The screen has just gone off. */
+    fun asleep(ctx: Context) {
+        val prefs = Prefs(ctx)
+        prefs.put(MARK, SleepCare.encode(now()))
+        ClockGuard.note(ctx)
+        if (prefs.bool("sleep.off", false) && Bridge.present && !plugged(ctx)) arm(ctx, SleepCare.LOOK_MS)
+    }
+
+    /** The screen has just come on: whatever sleep there was is over. */
+    fun awake(ctx: Context) = Prefs(ctx).put(MARK, "")
+
+    /** A game that may still be open: one on screen when it slept, RetroArch holding one, or any emulator still open. */
+    private fun gameOpen(ctx: Context): Boolean {
+        val prefs = Prefs(ctx)
+        val boot = runCatching { Settings.Global.getInt(ctx.contentResolver, Settings.Global.BOOT_COUNT) }.getOrDefault(-1)
+        val thisBoot = prefs.int("playing.boot", -2) == boot
+        if (thisBoot && (prefs.str("playing").isNotEmpty() || prefs.str("ra.open").isNotEmpty())) return true
+        // Unsure counts as open: the cost is only waiting until the battery is nearly gone.
+        val open = Bridge.read("dumpsys activity activities") ?: return true
+        return Emulators.packages.any { open.contains(" $it/") }
+    }
+
+    /** The hourly look, on the alarm's own thread. */
+    fun look(ctx: Context) {
+        val prefs = Prefs(ctx)
+        if (!prefs.bool("sleep.off", false) || !Bridge.present || plugged(ctx)) { stop(ctx); return }
+        val screenOn = ctx.getSystemService(PowerManager::class.java)?.isInteractive != false
+        val t = now()
+        if (screenOn) { prefs.put(MARK, ""); arm(ctx, SleepCare.LOOK_MS); return }
+        val mark = SleepCare.decode(prefs.str(MARK))
+        val asleep = mark?.let { SleepCare.asleepFor(it, t.elapsed, t.uptime) }
+        if (asleep == null) { prefs.put(MARK, SleepCare.encode(t)); arm(ctx, SleepCare.LOOK_MS); return }
+        val open = gameOpen(ctx)
+        if (SleepCare.powerOff(asleep, open, level(ctx))) {
+            prefs.put(MARK, "")
+            prefs.put(DUE, 0L)
+            Bridge.run("svc power shutdown")
+        } else arm(ctx, SleepCare.nextLook(asleep, open))
+    }
+}
+
+/** The alarm from [SleepGuard]: one look, off the main thread, then done. */
+class SleepCheck : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent?) {
+        val done = goAsync()
+        SleepGuard.watchScreen(ctx.applicationContext)
+        Executors.newSingleThreadExecutor().execute { runCatching { SleepGuard.look(ctx.applicationContext) }; done.finish() }
+    }
+}
+
+/**
+ * No buzzing in the dock. On Retroid's handhelds a game's rumble reaches the handheld's own motor through Retroid's
+ * mapping service (com.rp.mapping, seen in Android's vibration record), whichever controller the game rumbled, as a
+ * vibration of no particular kind, which Android sets with its media vibration level. With Quiet in the dock on, that
+ * level is off while a television is connected; it goes back to exactly what it was (usually not set at all) when the
+ * television is unplugged, when the switch goes off, or when the launcher next starts without one. The launcher's own
+ * ticks ([Feel.docked]) stop on a television either way.
+ */
+object DockQuiet {
+    private const val KEY = "media_vibration_intensity"
+    private const val SAVED = "dock.vibration"           // what it was before the dock: a number, "null" for not set
+    const val PREF = "dock.quiet"
+    private val worker = Executors.newSingleThreadExecutor()
+
+    fun apply(ctx: Context, docked: Boolean) {
+        Feel.docked = docked
+        if (!Bridge.present) return
+        val prefs = Prefs(ctx)
+        val quiet = docked && prefs.bool(PREF, false)
+        worker.execute {
+            val saved = prefs.str(SAVED)
+            if (quiet && saved.isEmpty()) {
+                val now = Bridge.read("settings get system $KEY")?.trim()?.takeIf { it.isNotEmpty() } ?: return@execute
+                prefs.putNow(SAVED, now)
+                Bridge.run("settings put system $KEY 0")
+            } else if (!quiet && saved.isNotEmpty()) {
+                val ok = if (saved == "null") Bridge.run("settings delete system $KEY") else Bridge.run("settings put system $KEY $saved")
+                if (ok) prefs.putNow(SAVED, "")
+            }
+        }
     }
 }
 
