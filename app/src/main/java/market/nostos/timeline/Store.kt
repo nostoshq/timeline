@@ -879,21 +879,27 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             if (held != null) scope.launch(Dispatchers.Main) {
                 if (held == chargeHeld) return@launch
                 chargeHeld = held
-                if (batteryLevel >= 0) batteryText = BatteryEstimate.text(batteryLevel, charging,
-                    BatteryEstimate.hoursLeft(BatteryEstimate.decode(prefs.str("battery.samples"))), chargeHeld)
+                if (batteryLevel >= 0) batteryText = BatteryEstimate.text(batteryLevel, charging, batteryHours, chargeHeld)
             }
         }
+    }
+
+    /** The last time worked out: left on battery, or to full on the charger. */
+    private var batteryHours: Float? = null
+
+    /** The header's battery line again from a fresh sample (each minute; Android's broadcasts can be minutes apart). */
+    fun batteryTick() {
+        if (batteryLevel < 0) return
+        batteryHours = BatteryPace.hours(ctx, batteryLevel, charging)
+        batteryText = BatteryEstimate.text(batteryLevel, charging, batteryHours, chargeHeld)
     }
 
     fun batteryChanged(level: Int, charging: Boolean) {
         if (level < 0) return
         this.charging = charging
-        val boot = boots().toLong()
-        val now = BatteryEstimate.Sample(boot, android.os.SystemClock.uptimeMillis(), level)
-        val kept = BatteryEstimate.add(BatteryEstimate.decode(prefs.str("battery.samples")), now, charging)
-        prefs.put("battery.samples", BatteryEstimate.encode(kept))
         batteryLevel = level
-        batteryText = BatteryEstimate.text(level, charging, BatteryEstimate.hoursLeft(kept), chargeHeld)
+        batteryHours = BatteryPace.hours(ctx, level, charging)
+        batteryText = BatteryEstimate.text(level, charging, batteryHours, chargeHeld)
         applyCharge()                                      // unplugged: the limit comes off at once
         if (!charging) SleepGuard.keepWatch(ctx)
         ClockGuard.note(ctx)
@@ -1046,6 +1052,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                     if (device.bridge) tvSoon()                        // docked at start-up: the television's rate, now that it can be set
                 }
                 applyCharge()
+                batteryTick()
                 delay(60_000)
             }
         }

@@ -118,7 +118,7 @@ corrects the speakers, and on the firmware it was measured on, it offers a measu
 
 ## Getting started
 
-1. **Download** `Timeline-1.2.0.apk` from [Releases](../../releases/latest) and open it on your handheld. Android
+1. **Download** `Timeline-<version>.apk` from [the latest release](../../releases/latest) and open it on your handheld. Android
    asks whether your browser or file manager may install apps; allow it. You can switch that off again afterward.
 2. **Open Timeline.** It asks for access to your files, so it can find your games, then offers to be your home
    screen. You can say no and open it like any other app.

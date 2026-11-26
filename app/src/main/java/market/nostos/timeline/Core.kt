@@ -4160,53 +4160,97 @@ object SleepCare {
 }
 
 object BatteryEstimate {
-    data class Sample(val boot: Long, val awakeMs: Long, val level: Int)
+    /**
+     * The battery's current, smoothed: [ma] in mA, flowing out while on battery and in while charging, as of [atMs]
+     * (elapsed time), sampled in the same direction since [sinceMs]. The estimate used to step whole percents, read only
+     * while the launcher was on screen, so a game's draw was missing from it and one percent more or less swung it by
+     * hours. The current is what the battery is doing now, game or launcher.
+     */
+    data class Pace(val atMs: Long, val sinceMs: Long, val ma: Float, val charging: Boolean)
 
-    const val WINDOW = 90 * 60_000L                 // the pace of the last hour and a half awake
-    const val MIN_AWAKE = 12 * 60_000L
-    const val MIN_DROP = 2
+    /** How quickly the smoothing follows a change, about the last five minutes. */
+    const val TAU_MS = 5 * 60_000L
+    /** Measured this long in one direction before a time is shown. */
+    const val SETTLE_MS = 2 * 60_000L
+    /** A gap longer than this (asleep, switched off) starts the smoothing again. */
+    const val GAP_MS = 20 * 60_000L
+    /** Above this level the charger holds the voltage and the current falls away. */
+    const val TAPER_FROM = 80
+    /** Each percent above [TAPER_FROM] takes about this many times as long as one below it. */
+    const val TAPER = 2.0f
 
-    /** The samples worth keeping once [now] is read: none on the charger; only this boot and only while going down. */
-    fun add(samples: List<Sample>, now: Sample, charging: Boolean): List<Sample> {
-        if (charging) return emptyList()
-        // A level higher than now means it was charged in between, out of sight: those say nothing about the pace now.
-        val same = samples.filter { it.boot == now.boot && it.awakeMs <= now.awakeMs && it.level >= now.level }
-            .takeIf { s -> s.isEmpty() || now.level <= s.last().level } ?: emptyList()
-        val all = same + now
-        val inside = all.filter { now.awakeMs - it.awakeMs <= WINDOW }
-        val anchor = all.lastOrNull { now.awakeMs - it.awakeMs > WINDOW }
-        // One sample for each level is enough: the first time each was seen.
-        return (listOfNotNull(anchor) + inside).distinctBy { it.level }
+    /** The current as Android reports it, in mA, positive into the battery: some devices give mA, most give µA. */
+    fun milliamps(raw: Int): Float? = when {
+        raw == Int.MIN_VALUE || raw == 0 -> null
+        kotlin.math.abs(raw) >= 20_000 -> raw / 1000f
+        else -> raw.toFloat()
     }
 
-    /** Hours left at that pace, or null while there is too little to go on. */
-    fun hoursLeft(samples: List<Sample>): Float? {
-        val first = samples.firstOrNull() ?: return null
-        val last = samples.last()
-        val awake = last.awakeMs - first.awakeMs
-        val drop = first.level - last.level
-        if (awake < MIN_AWAKE || drop < MIN_DROP) return null
-        return last.level / (drop / (awake / 3_600_000f))
+    /** The next smoothed reading from a sample of [intoMa] (into the battery, mA) at [atMs]. */
+    fun next(prev: Pace?, atMs: Long, intoMa: Float, plugged: Boolean): Pace {
+        val ma = if (plugged) intoMa else -intoMa
+        if (prev == null || prev.charging != plugged || atMs < prev.atMs || atMs - prev.atMs > GAP_MS) return Pace(atMs, atMs, ma, plugged)
+        val w = 1.0 - kotlin.math.exp(-(atMs - prev.atMs).toDouble() / TAU_MS)
+        return Pace(atMs, prev.sinceMs, (prev.ma + (ma - prev.ma) * w).toFloat(), plugged)
     }
 
-    /** "88%", "88% / 6.5 h", "88% / 40 min", "88% / charging", and "82% / resting" on the charger while [ChargeHold] holds it. */
+    private fun settled(p: Pace?, nowMs: Long): Boolean =
+        p != null && nowMs - p.sinceMs >= SETTLE_MS && nowMs - p.atMs <= GAP_MS
+
+    /** Hours left on battery: the charge left over the draw now. */
+    fun hoursLeft(p: Pace?, nowMs: Long, leftMah: Float?): Float? {
+        if (!settled(p, nowMs) || p!!.charging || leftMah == null || leftMah <= 0f || p.ma < 20f) return null
+        return (leftMah / p.ma).takeIf { it in 0.02f..72f }
+    }
+
+    /**
+     * Hours to full on the charger: the battery gauge's own figure when it gives one (it knows the charging curve),
+     * otherwise the current now to [TAPER_FROM] and the slower last stretch after it.
+     */
+    fun hoursToFull(p: Pace?, nowMs: Long, level: Int, fullMah: Float?, gaugeSeconds: Long? = null): Float? {
+        if (level >= 100) return null
+        gaugeSeconds?.takeIf { it in 60L..86_400L }?.let { return it / 3600f }
+        if (!settled(p, nowMs) || !p!!.charging || fullMah == null || fullMah <= 0f || p.ma < 50f) return null
+        val perPercent = fullMah / 100f / p.ma
+        val hours = if (level < TAPER_FROM) perPercent * ((TAPER_FROM - level) + (100 - TAPER_FROM) * TAPER)
+            else perPercent * (100 - level) * (1f + TAPER) / 2f       // already slowing: half of what is still to come
+        return hours.takeIf { it in 0.02f..24f }
+    }
+
+    /**
+     * The charge left in mAh, from the gauge's count ([counterMah]) checked against its full charge ([fullMah]), or
+     * that full charge at [level]. With no full charge to check against, a count is taken only when it makes a battery
+     * of a plausible size at that level (a gauge that counts in other units would otherwise give hours of nonsense).
+     */
+    fun leftMah(counterMah: Float?, fullMah: Float?, level: Int): Float? {
+        val full = fullMah?.takeIf { it > 100f }
+        val counter = counterMah?.takeIf { it > 0f }?.takeIf { c ->
+            if (full != null) c <= full * 1.2f else level in 1..100 && c * 100f / level in 300f..40_000f
+        }
+        return counter ?: full?.let { it * level / 100f }
+    }
+
+    private fun span(hours: Float): String = when {
+        hours < 1f -> "${(hours * 60).toInt().coerceAtLeast(1)} min"
+        hours < 10f -> "${"%.1f".format(Locale.US, hours)} h"
+        else -> "${hours.toInt()} h"
+    }
+
+    /** "88%", "88% / 6.5 h", "88% / 40 min", "64% / full in 1.2 h", "64% / charging", "82% / resting" while [ChargeHold] holds it. */
     fun text(level: Int, charging: Boolean, hours: Float?, held: Boolean = false): String = when {
         level < 0 -> ""
         charging && held && level >= ChargeHold.LEVEL -> "$level% / resting"
-        charging -> "$level% / charging"
+        charging && level >= 100 -> "$level% / full"
+        charging -> if (hours == null) "$level% / charging" else "$level% / full in ${span(hours)}"
         hours == null -> "$level%"
-        hours < 1f -> "$level% / ${(hours * 60).toInt().coerceAtLeast(1)} min"
-        hours < 10f -> "$level% / ${"%.1f".format(Locale.US, hours)} h"
-        else -> "$level% / ${hours.toInt()} h"
+        else -> "$level% / ${span(hours)}"
     }
 
-    fun encode(samples: List<Sample>): String = samples.joinToString(";") { "${it.boot},${it.awakeMs},${it.level}" }
-    fun decode(text: String): List<Sample> = text.split(';').mapNotNull { part ->
-        val f = part.split(',')
-        if (f.size != 3) null else runCatching { Sample(f[0].toLong(), f[1].toLong(), f[2].toInt()) }.getOrNull()
+    fun encode(p: Pace?): String = p?.let { "${it.atMs},${it.sinceMs},${it.ma},${if (it.charging) 1 else 0}" } ?: ""
+    fun decode(text: String): Pace? = text.split(',').takeIf { it.size == 4 }?.let { f ->
+        runCatching { Pace(f[0].toLong(), f[1].toLong(), f[2].toFloat(), f[3] == "1") }.getOrNull()
     }
 }
-
 object History {
     private val lengths = intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 

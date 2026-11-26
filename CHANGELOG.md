@@ -26,6 +26,11 @@
   the console's video chip did.
 - **Quiet in the dock.** On a television the scroll ticks stop, and on Retroid handhelds, with Settings, Controls, Quiet
   in the dock on, game rumble stops too. Both come back when the television is unplugged.
+- **Time left and time to full follow the current the battery measures**, also during games. The header's estimate
+  used to step whole percents, read only while Timeline was on screen, so a game's draw was missing from it and one
+  percent more or less moved it by hours. It now works from the battery's current, smoothed over the last few
+  minutes, and on the charger shows "full in" from the battery's own figure where it gives one. A device whose
+  battery reports no current shows the level alone.
 - **The rest screen stays lit only on the charger** unless you choose otherwise (Settings, Display, Rest screen stays
   lit).
 

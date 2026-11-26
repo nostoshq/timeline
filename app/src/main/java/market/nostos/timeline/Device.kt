@@ -316,6 +316,7 @@ class GuardService : Service() {
                 reader.execute {
                     try {
                         val before = g.mode
+                        BatteryPace.sample(applicationContext)
                         val after = g.next(Heat.chip(), Heat.battery(applicationContext))
                         if (after != before && guard === g) Device.fan(applicationContext, after, epoch)
                     } finally { reading.set(false) }
@@ -1085,6 +1086,65 @@ object ClockGuard {
     fun shift(ctx: Context, unit: String, step: Int, done: () -> Unit) = worker.execute {
         if (set(ClockCare.shifted(System.currentTimeMillis(), unit, step))) note(ctx)
         Handler(Looper.getMainLooper()).post(done)
+    }
+}
+
+/**
+ * Samples the battery's current for [BatteryEstimate]: at each of Android's battery broadcasts while the launcher is on
+ * screen, each minute while the launcher runs (a game in front included), and every ten seconds while a game runs with
+ * the heat guard on, so a game's draw counts. Where the gauge gives no current, nothing is shown but the level.
+ */
+object BatteryPace {
+    private const val KEY = "battery.pace"
+    private const val SIGN = "battery.sign"
+    @Volatile private var pace: BatteryEstimate.Pace? = null
+    @Volatile private var loaded = false
+    @Volatile private var savedAt = 0L
+
+    private fun plugged(ctx: Context): Boolean = runCatching {
+        ctx.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+    }.getOrDefault(false)
+
+    /** One sample; the smoothed reading after it. */
+    fun sample(ctx: Context): BatteryEstimate.Pace? = synchronized(this) {
+        val prefs = Prefs(ctx)
+        if (!loaded) { pace = BatteryEstimate.decode(prefs.str(KEY)); loaded = true }
+        val bm = ctx.getSystemService(android.os.BatteryManager::class.java) ?: return pace
+        val raw = runCatching { bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
+        val ma = BatteryEstimate.milliamps(raw) ?: return pace
+        val onCharger = plugged(ctx)
+        // Android says positive is into the battery, but not every gauge agrees: off the charger the current can only be
+        // leaving, so its sign there says which way round this one counts.
+        if (!onCharger && kotlin.math.abs(ma) > 20f) prefs.put(SIGN, if (ma > 0f) -1 else 1)
+        val into = ma * prefs.int(SIGN, 1)
+        val now = android.os.SystemClock.elapsedRealtime()
+        pace = BatteryEstimate.next(pace, now, into, onCharger)
+        if (now - savedAt > 60_000L || pace?.sinceMs == now) { prefs.put(KEY, BatteryEstimate.encode(pace)); savedAt = now }
+        pace
+    }
+
+    /** A number from the battery's own driver, where it can be read (not every device allows it). */
+    private fun num(name: String): Long? =
+        runCatching { java.io.File("/sys/class/power_supply/battery/$name").readText().trim().toLong() }.getOrNull()
+
+    /** Its full charge in mAh, where the driver says. */
+    private fun fullMah(): Float? = num("charge_full")?.let { it / 1000f }?.takeIf { it > 100f }
+
+    /** The charge left in mAh: the gauge's count, or the level of its full charge. */
+    private fun leftMah(ctx: Context, level: Int): Float? {
+        val counter = runCatching { ctx.getSystemService(android.os.BatteryManager::class.java)
+            ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER) }.getOrNull()
+            ?.takeIf { it > 0 && it != Int.MIN_VALUE }?.let { it / 1000f }
+        return BatteryEstimate.leftMah(counter, fullMah(), level)
+    }
+
+    /** Hours left on battery, or to full on the charger; null while there is not enough to go on. */
+    fun hours(ctx: Context, level: Int, charging: Boolean): Float? {
+        val p = sample(ctx)
+        val now = android.os.SystemClock.elapsedRealtime()
+        return if (charging) BatteryEstimate.hoursToFull(p, now, level, fullMah(), num("time_to_full_now"))
+        else BatteryEstimate.hoursLeft(p, now, leftMah(ctx, level))
     }
 }
 

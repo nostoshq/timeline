@@ -1649,30 +1649,71 @@ class ExtrasTest {
         assertFalse(DsSaves.bring("1:c", "1:b", "", 1000L, 0L))       // within the 2.5 seconds a card's clock can be out by
     }
 
-    @Test fun batteryTimeLeftFollowsThePaceOffTheCharger() {
+    @Test fun batteryTimeLeftFollowsTheCurrentDrawnNow() {
         val B = BatteryEstimate
         val min = 60_000L
-        var kept = emptyList<BatteryEstimate.Sample>()
-        // ten minutes, 2 % down: too soon to say
-        kept = B.add(kept, BatteryEstimate.Sample(1, 0, 90), false)
-        kept = B.add(kept, BatteryEstimate.Sample(1, 10 * min, 88), false)
-        assertNull(B.hoursLeft(kept))
-        assertEquals("88%", B.text(88, false, B.hoursLeft(kept)))
-        // an hour awake, 10 % down: 80 % lasts eight hours at that pace
-        kept = B.add(kept, BatteryEstimate.Sample(1, 60 * min, 80), false)
-        assertEquals(8f, B.hoursLeft(kept)!!, 0.01f)
-        assertEquals("80% / 8.0 h", B.text(80, false, B.hoursLeft(kept)))
-        // the charger starts it again, and so does a new boot or a level that went up out of sight
-        assertTrue(B.add(kept, BatteryEstimate.Sample(1, 61 * min, 80), true).isEmpty())
-        assertEquals(1, B.add(kept, BatteryEstimate.Sample(2, 1 * min, 79), false).size)
-        assertEquals(1, B.add(kept, BatteryEstimate.Sample(1, 70 * min, 95), false).size)
-        // only the last hour and a half counts, anchored by the sample just before it
-        val long = B.add(kept, BatteryEstimate.Sample(1, 200 * min, 40), false)
-        assertEquals(60 * min, long.first().awakeMs)
-        assertEquals("88% / charging", B.text(88, true, null))
+        assertEquals(-850f, B.milliamps(-850_000)!!, 0.01f)        // µA, as most gauges give it
+        assertEquals(-850f, B.milliamps(-850)!!, 0.01f)            // mA, as a few do
+        assertNull(B.milliamps(0))
+        assertNull(B.milliamps(Int.MIN_VALUE))                     // a gauge with no current to give
+        // on battery at 1000 mA for a minute: too soon to say; at two minutes, 3000 mAh lasts three hours
+        var p = B.next(null, 0, -1000f, plugged = false)
+        p = B.next(p, 1 * min, -1000f, plugged = false)
+        assertNull(B.hoursLeft(p, 1 * min, 3000f))
+        p = B.next(p, 2 * min, -1000f, plugged = false)
+        assertEquals(3f, B.hoursLeft(p, 2 * min, 3000f)!!, 0.01f)
+        // a game starts drawing 2000 mA: the estimate follows within minutes, not at once
+        var q = p
+        for (m in 3..7) q = B.next(q, m * min, -2000f, plugged = false)
+        val mid = B.hoursLeft(q, 7 * min, 3000f)!!
+        assertTrue(mid in 1.5f..2.5f)
+        for (m in 8..30) q = B.next(q, m * min, -2000f, plugged = false)
+        assertEquals(1.5f, B.hoursLeft(q, 30 * min, 3000f)!!, 0.05f)
+        // the charger, a long sleep or a restart starts it again
+        assertEquals(true, B.next(q, 31 * min, 1500f, plugged = true).charging)
+        assertEquals(40 * min + 30 * min, B.next(q, 40 * min + 30 * min, -800f, plugged = false).sinceMs)
+        assertEquals(5 * min, B.next(q, 5 * min, -800f, plugged = false).sinceMs)
+        assertNull(B.hoursLeft(q, 30 * min + B.GAP_MS + 1, 3000f))   // an old reading says nothing
+        assertNull(B.hoursLeft(q, 30 * min, null))                    // nothing known of the charge left
+        assertEquals(q, B.decode(B.encode(q)))
+        assertNull(B.decode(""))
+    }
+
+    @Test fun timeToFullUsesTheGaugeOrTheChargingCurve() {
+        val B = BatteryEstimate
+        val min = 60_000L
+        var c = B.next(null, 0, 2500f, plugged = true)
+        c = B.next(c, 3 * min, 2500f, plugged = true)
+        assertEquals(0.5f, B.hoursToFull(c, 3 * min, 50, 5000f, gaugeSeconds = 1800)!!, 0.01f)       // the gauge's own figure first
+        // at 2500 mA into 5000 mAh: 0.02 h a percent to 80, twice that after: 30 x 0.02 + 20 x 0.04 = 1.4 h
+        assertEquals(1.4f, B.hoursToFull(c, 3 * min, 50, 5000f)!!, 0.01f)
+        var slow = B.next(null, 0, 1000f, plugged = true)
+        slow = B.next(slow, 3 * min, 1000f, plugged = true)
+        assertEquals(0.75f, B.hoursToFull(slow, 3 * min, 90, 5000f)!!, 0.01f)                        // already slowing
+        assertNull(B.hoursToFull(c, 3 * min, 100, 5000f))
+        assertEquals(1.4f, B.hoursToFull(c, 3 * min, 50, 5000f, gaugeSeconds = -1)!!, 0.01f)       // a gauge with no figure is passed over
+        assertNull(B.hoursToFull(c, 3 * min, 50, null))                                              // no readable gauge: "charging"
+        var losing = B.next(null, 0, -300f, plugged = true)                                          // a weak charger under a game
+        losing = B.next(losing, 3 * min, -300f, plugged = true)
+        assertNull(B.hoursToFull(losing, 3 * min, 50, 5000f))
+        assertEquals("64% / full in 1.4 h", B.text(64, true, 1.4f))
+        assertEquals("64% / charging", B.text(64, true, null))
+        assertEquals("100% / full", B.text(100, true, null))
+        assertEquals("82% / resting", B.text(82, true, 0.5f, held = true))
+        assertEquals("88% / full in 40 min", B.text(88, true, 0.67f))
         assertEquals("30% / 45 min", B.text(30, false, 0.75f))
         assertEquals("100% / 12 h", B.text(100, false, 12.4f))
-        assertEquals(kept, B.decode(B.encode(kept)))
+        assertEquals("88%", B.text(88, false, null))
+    }
+
+    @Test fun theChargeLeftIsTheGaugesCountWhenItIsPlausible() {
+        val B = BatteryEstimate
+        assertEquals(2500f, B.leftMah(2500f, 5000f, 50)!!, 0.01f)
+        assertEquals(2500f, B.leftMah(9000f, 5000f, 50)!!, 0.01f)      // more than the battery holds: its full charge at the level
+        assertEquals(2500f, B.leftMah(null, 5000f, 50)!!, 0.01f)
+        assertEquals(2500f, B.leftMah(2500f, null, 50)!!, 0.01f)       // no readable full charge: a count of a plausible size
+        assertNull(B.leftMah(2.5f, null, 50))                          // a count in other units
+        assertNull(B.leftMah(null, null, 50))
     }
 
     @Test fun stickLightsAreWrittenToTheirDriversInTheMakersShape() {

@@ -9,7 +9,7 @@
     <!-- The optional heat guard, which runs only while a game is on screen. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- The speaker tone shape: one system-wide equaliser, put back after a restart. -->
+    <!-- The speaker tone shape: one system-wide equalizer, put back after a restart. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
@@ -65,7 +65,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Holds the equaliser that shapes the built-in speakers' sound" />
+                android:value="Holds the equalizer that shapes the built-in speakers' sound" />
         </service>
         <!-- Hears Android's answer after a downloaded emulator's installer is handed to it. -->
         <receiver android:name=".InstallReceiver" android:exported="false" />
