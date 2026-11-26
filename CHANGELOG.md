@@ -38,6 +38,18 @@
   battery reports no current shows the level alone.
 - **The rest screen stays lit only on the charger** unless you choose otherwise (Settings, Display, Rest screen stays
   lit).
+- **The rest clock wanders, and dims at night.** On an AMOLED screen a clock left in one place all night wears its
+  shape into the panel. It used to step around a small square; it now drifts a few pixels a minute across a wider
+  area, on a path that differs from night to night, and from 11 at night to 7 in the morning it is drawn at under half
+  its light.
+- **Pokémon Stadium reads your Game Boy Pokémon.** Before Stadium starts, the Red, Blue or Yellow game you played last
+  that has a save goes into its Transfer Pak (for Stadium 2, Gold, Silver and Crystal too), so your teams come in, and
+  what Stadium changes goes back into that game's save. A game started but never saved
+  is passed over, since Stadium cannot read it.
+- **Turok 3 and Quake II on two sticks**, with Nintendo 64 shooters: modern controls on: walk with the left stick and
+  aim with the right. Quake II looks up with the stick pushed up; it has no setting of its own for that.
+- **Test starts keep to themselves.** A start made by a test tool (`--ez test true`) now keeps RetroArch's saves and
+  places in Timeline/testsaves, leaves the player's saves alone and is not counted as play.
 
 ## 1.9.1
 

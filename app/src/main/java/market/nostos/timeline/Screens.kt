@@ -41,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -1158,7 +1159,8 @@ private fun menu(app: AppState, id: String): MenuDef = when {
                 app.prefs.put("rest.always", app.restAlways)
             }),
         Item("Rest screen after", if (app.idleMinutes == 0) "Never" else "${app.idleMinutes} min",
-            "A dim clock that drifts a little each minute, so nothing stays lit in one place.", onStep = { d ->
+            "A dim clock that drifts a little each minute across the screen, so nothing stays lit in one place, and dims " +
+                "further from 11 at night to 7 in the morning.", onStep = { d ->
                 val steps = listOf(1, 3, 5, 10, 0)
                 app.idleMinutes = steps[(steps.indexOf(app.idleMinutes).coerceAtLeast(0) + d).mod(steps.size)]
                 app.prefs.put("idleMinutes", app.idleMinutes)
@@ -1923,18 +1925,21 @@ fun IdleScreen() {
         true
     }
     val last = app.recent.firstOrNull { it !in app.hidden || app.isOpen(it) }?.let(app::find)
-    val minute by produceState(Calendar.getInstance().get(Calendar.MINUTE)) {
+    // This minute (counted from 1970) and the minute of the day, read every 20 seconds.
+    fun now() = System.currentTimeMillis() / 60_000L to Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+    val minute by produceState(now()) {
         while (true) {
             delay(20_000)
-            value = Calendar.getInstance().get(Calendar.MINUTE)
+            value = now()
         }
     }
-    // The picture moves a little every minute so nothing rests on the same pixels.
+    val (dx, dy) = RestDrift.at(minute.first)
+    // The picture wanders a few pixels every minute so nothing rests on the same pixels of an AMOLED panel (RestDrift).
     Box(Modifier.fillMaxSize().tap { app.wake() }.padding(horizontal = 64.u(), vertical = 56.u())) {
         Column(
-            // It moves a little every minute; it is made narrower by the most it moves, so it never runs off the screen.
-            Modifier.align(Alignment.BottomStart).offset(x = (60 + (minute % 6) * 22).u(), y = (-(40 + (minute % 4) * 26)).u())
-                .widthIn(max = (1152 - 60 - 5 * 22).u()),
+            // It is made narrower by the most it moves, so it never runs off the screen.
+            Modifier.align(Alignment.BottomStart).offset(x = (60 + dx).u(), y = (-(40 + dy)).u())
+                .widthIn(max = (1152 - 60 - RestDrift.WIDE).u()).alpha(RestDrift.light(minute.second)),
             verticalArrangement = Arrangement.spacedBy(34.u()),
        ) {
             Row(verticalAlignment = Alignment.Bottom) {

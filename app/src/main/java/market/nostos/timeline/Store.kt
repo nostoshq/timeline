@@ -685,6 +685,19 @@ object Runner {
     /** Whether [gbLooks] has been worked out in this run for the screen chosen (otherwise a game page works its own out, GbLooks.expected). */
     @Volatile var gbLooksKnown = false
 
+    /**
+     * RetroArch's settings for a test tool's start: the launcher's own, with saves and places kept in
+     * [RetroPack.TEST_SAVES] instead of the player's folders. Null if it cannot be written: the test start is then
+     * refused, never made with the player's folders.
+     */
+    fun testConfig(p: RetroPack.Paths): String? = runCatching {
+        val main = File(p.config).readText()
+        val test = File(File(p.config).parentFile, "retroarch-test.cfg")
+        listOf("saves", "states").forEach { File(RetroPack.TEST_SAVES, it).mkdirs() }
+        test.writeText(RetroPack.merge(main, RetroPack.testDirs))
+        test.path
+    }.getOrNull()
+
     fun writeRetroSetup(look: Look, p: RetroPack.Paths, pal: List<Pair<String, String>>, arcade: List<String> = emptyList(),
                         handheld: List<Pair<String, String>> = emptyList(), gb: List<GbLooks.Rom> = emptyList()): Boolean = runCatching {
         val home = File(p.home)
@@ -1498,6 +1511,110 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
         if (core == "SwanStation") RetroPack.psxSecondCard[stem]?.takeIf { it !in open }?.let { first -> copyIfNewer(File(dir, "$first.srm"), File(dir, "${stem}_2.mcd")) }
     }
 
+    /**
+     * Pokémon Stadium's Transfer Pak ([TransferPak]). Before Stadium or a Game Boy Pokémon game starts, whatever Stadium
+     * changed in the cartridge's save last time goes back into that Game Boy game's own save, the one it had being filed
+     * on the card first. The Game Boy game then starts from that save: its kept place is from before, and loading it would
+     * put the old save back, so it is set aside. Before Stadium starts, the Game Boy Pokémon game it reads that was played
+     * last and has a save in it goes in, cartridge and save beside Stadium on the card; when that is a different cartridge or save from the
+     * one Stadium last saw, Stadium's own kept place is set aside too, so it starts and reads the pak afresh, as a
+     * console would. Nothing is touched while either game is open. A test tool's start reads the player's saves only.
+     * Returns something to tell the player, or null.
+     */
+    private fun transferPaks(g: Game, testing: Boolean): String? {
+        val stadiums = cardLibrary["n64"].orEmpty().filter { it.stem in TransferPak.stadiums }
+        if (stadiums.isEmpty()) return null
+        val told = mutableListOf<String>()
+        if (!testing) for (s in stadiums) bringBack(s)?.let(told::add)
+        if (g.system == "n64" && g.stem in TransferPak.stadiums) putIn(g, testing)?.let(told::add)
+        return told.joinToString(" ").ifEmpty { null }
+    }
+
+    /** A Game Boy game's own save in RetroArch, wherever its emulator keeps it. */
+    private fun ownSave(c: Game): File? {
+        val emu = emulatorFor(c)
+        val core = Saves.coreFolder(emu) ?: return null
+        return File("${Runner.RETRO}/saves/$core/${saveStem(c, emu)}.srm")
+    }
+
+    private fun pakMark(f: File): String = TransferPak.mark(runCatching { f.takeIf { it.isFile }?.readBytes() }.getOrNull())
+
+    private fun tpakRecord(s: Game) = prefs.str("tpak:" + s.key).split('\t').takeIf { it.size == 3 }
+
+    private fun bringBack(s: Game): String? {
+        val rec = tpakRecord(s) ?: return null
+        val cart = find(rec[0])
+        // A test tool's cartridge, or a game no longer on the card: nothing to bring back.
+        if (rec[2] == "1" || cart == null) { prefs.put("tpak:" + s.key, ""); return null }
+        if (isOpen(s.key) || isOpen(cart.key)) return null
+        val sav = File(s.path + ".sav")
+        val own = ownSave(cart) ?: return null
+        val savMark = pakMark(sav)
+        val back = TransferPak.back(rec[1], savMark, pakMark(own))
+        if (back == TransferPak.Back.NOTHING) return null
+        val card = saveCard() ?: return null
+        val rel = own.relativeTo(File(Runner.RETRO)).invariantSeparatorsPath
+        // Both moved on (the Game Boy game was played since, some way the launcher did not see): the newer stays; the other is filed.
+        if (back == TransferPak.Back.BOTH_MOVED && own.lastModified() >= sav.lastModified()) {
+            val savRel = sav.relativeToOrNull(romsRoot ?: return null)?.invariantSeparatorsPath ?: return null
+            if (!SaveSync.keep(sav, card, "Transfer Pak", savRel)) return null
+            prefs.put("tpak:" + s.key, "")
+            return "${cart.title} was played since ${s.title} last had it, so what ${s.title} changed is kept on the card, in _timeline/saves/earlier, not brought in."
+        }
+        if (own.isFile && !SaveSync.keep(own, card, "RetroArch", rel))
+            return "The card is full, so what ${s.title} changed is not in ${cart.title}'s save yet."
+        if (!retroHome(states = false).put(rel, sav, sav.lastModified())) return null
+        placeOf(cart, emulatorFor(cart))?.takeIf { it.isFile }?.let(::setAside)
+        prefs.put("place.keep:" + cart.key, false)
+        prefs.put("tpak:" + s.key, listOf(cart.key, savMark, "0").joinToString("\t"))
+        return "What ${s.title} changed is in ${cart.title}'s save now, and it starts from that save."
+    }
+
+    /** The Pokémon generation of a Game Boy game, from its header. */
+    private fun generationOf(f: File): Int? = runCatching {
+        java.io.RandomAccessFile(f, "r").use { r ->
+            if (r.length() < 0x150) return null
+            val b = ByteArray(16); r.seek(0x134); r.readFully(b)
+            TransferPak.generation(String(b, Charsets.ISO_8859_1))
+        }
+    }.getOrNull()
+
+    private fun putIn(s: Game, testing: Boolean): String? {
+        if (isOpen(s.key)) return null
+        val reach = TransferPak.stadiums[s.stem] ?: return null
+        val carts = (cardLibrary["gb"].orEmpty() + cardLibrary["gbc"].orEmpty()).mapNotNull { c ->
+            if (!c.path.endsWith(".gb", true) && !c.path.endsWith(".gbc", true)) return@mapNotNull null
+            val gen = generationOf(File(c.path)) ?: return@mapNotNull null
+            val own = ownSave(c)?.takeIf { f -> runCatching { f.isFile && TransferPak.saved(gen, f.readBytes()) }.getOrDefault(false) }
+                ?: return@mapNotNull null
+            TransferPak.Cart(c.key, gen, maxOf(plays[c.key]?.last ?: 0L, own.lastModified()))
+        }
+        val pick = TransferPak.choose(reach, carts) ?: return null
+        val cart = find(pick.key) ?: return null
+        val own = ownSave(cart) ?: return null
+        val gb = File(s.path + ".gb")
+        val sav = File(s.path + ".sav")
+        fun copy(from: File, to: File): Boolean {
+            val part = File(to.path + ".part")
+            from.inputStream().use { i -> part.outputStream().use { o -> i.copyTo(o) } }
+            if (!part.renameTo(to)) { part.delete(); return false }
+            return true
+        }
+        val rom = File(cart.path)
+        if (!gb.isFile || gb.length() != rom.length() || saveMark(gb) != saveMark(rom)) { if (!copy(rom, gb)) return null }
+        val ownMark = pakMark(own)
+        val before = tpakRecord(s)
+        val fresh = pakMark(sav) != ownMark
+        if (fresh && !copy(own, sav)) return null
+        // A different cartridge, or a different save on it, from what Stadium last saw: it starts afresh and reads the pak.
+        if (!testing && (fresh || before?.get(0) != cart.key)) {
+            placeOf(s, emulatorFor(s))?.takeIf { it.isFile }?.let(::setAside)
+            prefs.put("place.keep:" + s.key, false)
+        }
+        prefs.put("tpak:" + s.key, listOf(cart.key, ownMark, if (testing) "1" else "0").joinToString("\t"))
+        return if (before?.get(0) != cart.key) "${cart.title} is in ${s.title}'s Transfer Pak." else null
+    }
+
     private fun syncDsSave(g: Game, toMelon: Boolean): DsSync {
         val none = DsSync()
         if (isOpen(g.key)) return none
@@ -2088,7 +2205,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             Cheevos.signedIn(runCatching { File(p.config).readText() }.getOrDefault(""), user)) {
             prefs.put("ra.cheevosPass", ""); prefs.put("ra.cheevosSigned", user)
         }
-        val look = look()
+        val look = look().copy(transferPak = cardLibrary["n64"].orEmpty()
+            .filter { it.stem in TransferPak.stadiums && File(it.path + ".gb").isFile }.map { it.stem }.toSet())
         val handheld = listOf("gb", "gbc", "gba", "nds").flatMap { s -> cardLibrary[s].orEmpty().map { s to it.stem } }
         // A Game Boy game RetroArch still has open keeps its looks while another screen is being chosen: taken away now,
         // RetroArch would write the game's options back when it closes (for good, as they are no longer the launcher's
@@ -3248,12 +3366,22 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // With the launcher's own setup switched on, RetroArch is pointed at it. If it cannot be written, RetroArch starts as usual.
             if (retro) withContext(Dispatchers.IO) { Runner.copyBios(romsRoot) }     // BIOS files are put where RetroArch looks, every time, cheaply
             if (retro && retroManaged) gbRemembering?.join()
+            // Pokémon Stadium's Transfer Pak, before the setup is written: it says whether a cartridge is in.
+            if (retro && g.system in setOf("n64", "gb", "gbc"))
+                withContext(Dispatchers.IO) { runCatching { transferPaks(g, testStartOf(g.key)) }.getOrNull() }?.let(::say)
             val ready = if (retro && retroManaged) withContext(Dispatchers.IO) {
                 Runner.retroPaths(ctx, plan.pkg)?.takeIf { retroSetup(it) }
             } else null
             // Never over a cleared task: a second RetroArch window opened inside a RetroArch that is still alive hangs on its logo.
             again = if (other) Again(g.key, disc, SystemClock.uptimeMillis()) else null
-            val launch = if (ready != null) plan.copy(extras = plan.extras + RetroPack.extras(look(), ready)) else plan
+            // A test tool's start keeps RetroArch's saves and places apart, in Timeline/testsaves (a settings file of its
+            // own says where), and touches none of the player's saves: test starts had left places and saves behind for
+            // games never played, and replaced a place that had been kept.
+            val testing = testStartOf(g.key)
+            val testCfg = if (testing && retro && ready != null) withContext(Dispatchers.IO) { Runner.testConfig(ready) } else null
+            if (testing && retro && testCfg == null) { starting = false; again = null; say("The test settings could not be written."); return@launch }
+            val launch = if (ready != null) plan.copy(extras = plan.extras + RetroPack.extras(look(), ready) +
+                (testCfg?.let { mapOf("CONFIGFILE" to it) } ?: emptyMap())) else plan
             // Before RetroArch looks for it: a saved place older than the game's last sitting must not be loaded.
             // Nintendo DS: the newer of its two saves goes where the emulator about to run reads it.
             // (Only between the two melonDS: DraStic keeps a save of its own.)
@@ -3262,7 +3390,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // it while one runs, pausing it and dimming the attachment behind the question (seen on a Nova). A return to
             // the game it holds is handed no game at all, which it ignores: its screen just comes forward.
             val melonBack = emulatorId == "melonds" && back && withContext(Dispatchers.IO) { Proc.hasWindow(ctx, plan.pkg) } == true
-            if (g.system == "nds" && !melonBack && (emulatorId == "melonds" || emulatorId == "ra:melondsds")) {
+            if (g.system == "nds" && !testing && !melonBack && (emulatorId == "melonds" || emulatorId == "ra:melondsds")) {
                 val ds = withContext(Dispatchers.IO) { runCatching { syncDsSave(g, toMelon = emulatorId == "melonds") }.getOrNull() }
                 ds?.message?.let { say(it) }
                 intoRetro = ds?.intoRetro == true
@@ -3270,8 +3398,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // PlayStation discs that read each other's cards (Gran Turismo 2, Suikoden II): not on a return to the open game.
             // When RetroArch held the other disc, the first start finds it open and leaves the cards; the automatic second
             // start, after RetroArch has closed (and written that disc's card), brings them together.
-            if (retro && g.system == "psx" && !back) withContext(Dispatchers.IO) { runCatching { psxCards(g, emulatorId) } }
-            if (retro && (!second || intoRetro)) {
+            if (retro && g.system == "psx" && !back && !testing) withContext(Dispatchers.IO) { runCatching { psxCards(g, emulatorId) } }
+            if (retro && !testing && (!second || intoRetro)) {
                 // A place the player took back by hand is loaded once, whatever its age.
                 if (prefs.bool("place.keep:" + g.key, false)) prefs.put("place.keep:" + g.key, false)
                 else withContext(Dispatchers.IO) { setAsideIfStale(g, emulatorId) }
@@ -3340,7 +3468,8 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             prefs.put("playing.gl", if (emulatorId == "dolphin" && (look().dolphinGl || (drawsWithGl(g.key) && dolphinWritten))) "1" else "0")
             prefs.put("playing.back", back)
             prefs.put("playing.boot", boots())
-            if (!second) {
+            prefs.put("playing.test", testing)
+            if (!second && !testing) {
                 plays = PlayLog.started(plays, g.key, now)
                 savePlays()
             }
@@ -3938,6 +4067,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
     private fun settlePlay(p: String) {
         if (p.isEmpty()) return
         if (prefs.str("playing") == p) prefs.putNow("playing", "")           // at once: a session must never be counted twice
+        if (prefs.bool("playing.test", false)) { prefs.put("playing.test", false); return }      // a test tool's start is not a sitting
         val parts = p.split('\n')
         val since = parts.getOrNull(1)?.toLongOrNull() ?: return
         val now = System.currentTimeMillis()

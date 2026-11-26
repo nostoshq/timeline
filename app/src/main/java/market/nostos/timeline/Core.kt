@@ -2013,6 +2013,7 @@ data class Look(
     val dolphinGlCodes: Map<String, Boolean> = emptyMap(), // GameCube and Wii games drawn with OpenGL on their own (true), or no longer (false), by disc ID
     val reconnectByName: Boolean = true,               // no two connected controllers share a name (see base)
     val signal: Map<String, String> = emptyMap(),      // per console group (RetroPack.signals): the signal it reached the screen by, where changed
+    val transferPak: Set<String> = emptySet(),          // the Pokémon Stadium games with a Game Boy cartridge in (TransferPak)
     val n64Modern: Boolean = true,                     // the N64 shooters on two sticks (RetroPack.twinStick, RetroPack.dualStick)
     val onePlayer: Boolean = true,                     // no second player's controller connected as the game starts (Players.onePlayer)
     val dsFirst: String = "By game",                   // the DS arrangement a game starts in (RetroPack.dsChoices)
@@ -2078,6 +2079,9 @@ object Hotkeys {
 object RetroPack {
     /** RetroArch's folder on the device's own shared storage: saves, places, BIOS files. */
     const val SHARED = "/storage/emulated/0/RetroArch"
+    /** Where a test tool's start keeps RetroArch's saves and places, apart from the player's (Runner.testConfig). */
+    const val TEST_SAVES = "/storage/emulated/0/Timeline/testsaves"
+    val testDirs: Map<String, String> = mapOf("savefile_directory" to "$TEST_SAVES/saves", "savestate_directory" to "$TEST_SAVES/states")
 
     private class Crt(val file: String, val linear: Boolean, val border: Boolean = false)
 
@@ -3070,7 +3074,7 @@ object RetroPack {
     val n64Aim: Map<String, String> = mapOf("mupen64plus-astick-deadzone" to "5", "mupen64plus-astick-sensitivity" to "115")
 
     /** A game's own N64 settings: its fixes, four times for [n64FourTimes] unless it is run lighter, and [n64Aim]. */
-    private fun n64Own(stem: String, light: Boolean, look: Look): Map<String, String> = n64Fixes[stem].orEmpty() +
+    private fun n64Own(stem: String, light: Boolean, look: Look): Map<String, String> = n64Fixes[stem].orEmpty() + TransferPak.option(stem, look) +
         (if (!light && stem in n64FourTimes) mapOf("mupen64plus-43screensize" to "1280x960") else emptyMap()) +
         (if (stem !in dualStick) emptyMap() else if (look.n64Modern) n64Aim else n64AimOff)
 
@@ -3090,25 +3094,33 @@ object RetroPack {
 
     /**
      * Shooters made with walking on the C buttons and aiming on the stick: Turok's own layout, Turok 2's Expert one,
-     * which it starts with, and Sin and Punishment's first, which moves with C-left and C-right. With the sticks swapped
+     * which it starts with, Turok 3's Normal right-handed and Quake II's Style A, which both start with (their manuals),
+     * and Sin and Punishment's first, which moves with C-left and C-right. With the sticks swapped
      * they play as a modern shooter does, walking on the left stick and aiming with the right, with nothing to change in
      * the game. GoldenEye and Perfect Dark walk and turn on the one stick: they get [dualStick]. Only with "Nintendo 64
      * shooters: modern controls" on (Look.n64Modern); off, the core's own.
      */
     val twinStick: Set<String> = setOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)",
-        "Tsumi to Batsu - Hoshi no Keishousha (Japan)")
+        "Tsumi to Batsu - Hoshi no Keishousha (Japan)", "Turok 3 - Shadow of Oblivion (USA)", "Quake II (USA)")
+
+    /**
+     * [twinStick] games that look the flight-stick way, stick forward to look down, with no option to turn it: Quake II
+     * (seen on a Nova, 2026-11-26; its Configure page offers presets only, and its manual has no such option). Their
+     * remap swaps the right stick's up and down.
+     */
+    val lookTurned: Set<String> = setOf("Quake II (USA)")
 
     /**
      * [twinStick]'s controls, every player: the left stick is the C buttons (the core's right stick) and the right stick is
      * the console's stick; R2 is Z, which fires, as well as L2 (R2's C-button mode is not needed with C on a stick). A
      * game's own remap takes the place of the core's, so [n64Buttons] is given again. RetroArch numbers the stick
-     * directions 16 to 23: left x+, x-, y+, y-, then right.
+     * directions 16 to 23: left x+, x-, y+, y-, then right. [lookTurned] swaps the right stick's up and down.
      */
-    fun n64TwinStick(): String = n64Buttons() + buildString {
+    fun n64TwinStick(lookTurned: Boolean = false): String = n64Buttons() + buildString {
         for (player in 1..4) {
             for ((i, dir) in listOf("x+", "x-", "y+", "y-").withIndex()) {
                 append("input_player${player}_stk_l_$dir = \"${20 + i}\"\n")
-                append("input_player${player}_stk_r_$dir = \"${16 + i}\"\n")
+                append("input_player${player}_stk_r_$dir = \"${16 + if (lookTurned && i >= 2) 5 - i else i}\"\n")
             }
             append("input_player${player}_btn_r2 = \"12\"\n")
         }
@@ -3399,7 +3411,7 @@ object RetroPack {
         // The shooters on two sticks, with modern controls on. Off, or GoldenEye and Perfect Dark with a second player's
         // controller connected, their files are left out, and the launcher takes away the ones it wrote before.
         if (look.n64Modern) {
-            for (stem in twinStick) out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64TwinStick()
+            for (stem in twinStick) out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64TwinStick(stem in lookTurned)
             out["remaps/Mupen64Plus-Next/$DOOM_64.rmp"] = n64Doom()
             if (look.onePlayer) for (stem in dualStick) {
                 out["remaps/Mupen64Plus-Next/$stem.rmp"] = n64DualStick()
@@ -3435,7 +3447,7 @@ object RetroPack {
             out["SwanStation/$stem.opt"] = cfg(swanstation(look, look.sharp, stem))
             out["Beetle PSX HW/$stem.opt"] = cfg(beetleFor(look, look.sharp, stem))
         }
-        for (stem in n64Fixes.keys + n64FourTimes + dualStick) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + n64Own(stem, false, look))
+        for (stem in n64Fixes.keys + n64FourTimes + dualStick + TransferPak.stadiums.keys) if ("n64/$stem" !in look.lighter) out["Mupen64Plus-Next/$stem.opt"] = cfg(mupen(true, n64Parallel(look)) + n64Own(stem, false, look))
         for ((stem, fix) in dcFixes) if ("dreamcast/$stem" !in look.lighter) out["Flycast/$stem.opt"] = cfg(flycast(look, look.sharp) + fix)
         // Rayman 2 does not start with achievements on (flycast #2566): that one game goes without them.
         out["Flycast/Rayman 2 - The Great Escape (USA) (En,Fr,De,Es,It).cfg"] = cfg(mapOf("cheevos_enable" to "false"))
@@ -4266,6 +4278,97 @@ object BatteryEstimate {
         runCatching { Pace(f[0].toLong(), f[1].toLong(), f[2].toFloat(), f[3] == "1") }.getOrNull()
     }
 }
+
+/**
+ * Pokémon Stadium's Transfer Pak, so Stadium reads the teams in the player's Game Boy Pokémon games. Mupen64Plus-Next
+ * puts a Game Boy cartridge in the Transfer Pak when it finds "<N64 game file>.gb" beside the game as it loads, with
+ * the cartridge's save as "<N64 game file>.sav", which it writes back as the game writes it (read from the core's
+ * libretro.c and gb_cart.c, 2026-11-26). The pak goes in the first controller's slot.
+ * Stadium reads Red, Blue and Yellow; Stadium 2 those and Gold, Silver and Crystal. The launcher keeps the cartridge's
+ * save there in step with the Game Boy game's own (Store.transferPaks).
+ */
+object TransferPak {
+    /** The Stadium games by file name, and the newest Pokémon generation each reads. */
+    val stadiums: Map<String, Int> = linkedMapOf("Pokemon Stadium (USA) (Rev 2)" to 1, "Pokemon Stadium 2 (USA)" to 2)
+
+    /** The Pokémon generation of a Game Boy game from the title in its header (0x134, 16 bytes), or null for any other. */
+    fun generation(header: String): Int? = when {
+        listOf("POKEMON RED", "POKEMON BLUE", "POKEMON GREEN", "POKEMON YELLOW").any(header::startsWith) -> 1
+        listOf("POKEMON_GLD", "POKEMON_SLV", "PM_CRYSTAL").any(header::startsWith) -> 2
+        else -> null
+    }
+
+    /**
+     * Whether a cartridge's memory holds a save the game itself would load, so Stadium has Pokémon to read: the first
+     * generation's checksum (0x2598 to 0x3522, kept at 0x3523) agrees, or the second's first check value (0x63 at 0x2008)
+     * is there. A game started and never saved has neither; Stadium then says "Saved file not found" (seen on a Nova,
+     * 2026-11-26).
+     */
+    fun saved(generation: Int, save: ByteArray): Boolean = when (generation) {
+        1 -> save.size > 0x3523 && ((0x2598..0x3522).sumOf { save[it].toInt() and 0xFF }.inv() and 0xFF) == (save[0x3523].toInt() and 0xFF)
+        2 -> save.size > 0x2008 && save[0x2008] == 0x63.toByte()
+        else -> false
+    }
+
+    /** A Game Boy Pokémon game that has a save: its key, its generation, and when it was last played or saved. */
+    data class Cart(val key: String, val generation: Int, val last: Long)
+
+    /** The cartridge for a Stadium that reads up to [reach]: the one played last. */
+    fun choose(reach: Int, carts: List<Cart>): Cart? = carts.filter { it.generation <= reach }.maxByOrNull { it.last }
+
+    /** The first controller's pak in a Stadium game's own options: the Transfer Pak with a cartridge in, otherwise the core's usual one. */
+    fun option(stem: String, look: Look): Map<String, String> =
+        if (stem !in stadiums) emptyMap() else mapOf("mupen64plus-pak1" to if (stem in look.transferPak) "transfer" else "memory")
+
+    /**
+     * The start of the cartridge's memory that the Game Boy games use only as scratch and never keep: the first generation's
+     * sprite buffers, inside the second's 0x600 bytes of scratch. Stadium writes its memory check there each time it
+     * starts (seen on a Nova, 2026-11-26), so the saves are compared from here on.
+     */
+    const val SCRATCH = 0x498
+
+    /** A save's mark for the Transfer Pak, its scratch left out; "" for none. */
+    fun mark(save: ByteArray?): String =
+        if (save == null || save.size <= SCRATCH) "" else java.util.zip.CRC32().apply { update(save, SCRATCH, save.size - SCRATCH) }.value.toString(16)
+
+    enum class Back { NOTHING, BRING, BOTH_MOVED }
+
+    /** After Stadium has run: what to do with the cartridge's save, from its mark as put in, as it is now, and the Game Boy game's own now. */
+    fun back(putIn: String, cartNow: String, ownNow: String): Back = when {
+        cartNow.isEmpty() || cartNow == putIn -> Back.NOTHING
+        ownNow == putIn -> Back.BRING
+        else -> Back.BOTH_MOVED
+    }
+}
+
+/**
+ * Where the rest screen's clock stands, minute by minute, as care for the panel: the Nova's panel is AMOLED, and the
+ * rest screen stays lit all night on the charger. It used to step through 12 places within
+ * about 110 by 80 pixels, a cycle of 12 minutes, and its bold digits are some 30 pixels wide, so the same pixels were lit
+ * most of the night. Now it wanders a few pixels a minute over [WIDE] by [HIGH], back and forth across and up and down
+ * on cycles of different lengths, counted from 1970 rather than from midnight so each night takes a different path: in
+ * a week every part of that area has had its turn, the busiest 10-pixel square lit about a third more than the average.
+ * From 11 at night to 7 in the morning it is drawn at [NIGHT] of its light: the room is dark, and it still reads.
+ */
+object RestDrift {
+    const val WIDE = 300
+    const val HIGH = 360
+    const val NIGHT = 0.45f
+    private const val ACROSS = 89         // minutes to cross one way; prime to each other, so the two never fall in step
+    private const val UP = 67
+
+    private fun sweep(minute: Long, span: Int, length: Int): Int {
+        val t = minute.mod(2L * length).toInt()
+        return (if (t <= length) t else 2 * length - t) * span / length
+    }
+
+    /** How far right and up, in the layout's units, at this minute (counted from 1970). */
+    fun at(minute: Long): Pair<Int, Int> = sweep(minute, WIDE, ACROSS) to sweep(minute, HIGH, UP)
+
+    /** The share of its light the clock is drawn at, at this minute of the day. */
+    fun light(minuteOfDay: Int): Float = if (minuteOfDay >= 23 * 60 || minuteOfDay < 7 * 60) NIGHT else 1f
+}
+
 object History {
     private val lengths = intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 
@@ -4426,7 +4529,9 @@ object ControlsNote {
     )
     /** RetroArch games with something of their own to say, by system and then by name (Titles.base). */
     private val retroOwn: Map<String, Map<String, String>> = run {
-        val stadium = "Rental Pokémon play as normal. The GB Tower and your own Game Boy Pokémon need a Transfer Pak, which is not set up here."
+        val tpak = "What Stadium changes goes back into that game's save, and the game starts from that save next."
+        val stadium = "Your Pokémon come in through the Transfer Pak, from the saved Red, Blue or Yellow game you played last. $tpak"
+        val stadium2 = "Your Pokémon come in through the Transfer Pak, from the saved Pokémon game you played last, Red to Crystal. $tpak"
         val noRumble = "No rumble: its saves are on the Controller Pak, which takes the slot, as on the console."
         val threeD = "SELECT switches the 3D Control Pad between analog and digital."
         val sun = "R3 and L3 turn the sun up and down."
@@ -4437,7 +4542,7 @@ object ControlsNote {
                 "diddy kong racing" to "The Rumble Pak is in, so a time trial ghost lasts until you leave. To keep one, when the game asks for the " +
                     "Controller Pak: Quick Menu, Core Options, Pak/Controller Options, Player 1 Pak, memory.",
                 "pokemon snap" to "Professor Oak's check of your photos does not work in this emulator yet.",
-                "pokemon stadium" to stadium, "pokemon stadium 2" to stadium,
+                "pokemon stadium" to stadium, "pokemon stadium 2" to stadium2,
                 "mario kart 64" to "In split-screen the small course map can look wrong.",
                 "star wars - shadows of the empire" to "The space levels have a plain black sky, without their stars.",
                 "kirby 64 - the crystal shards" to "The health display can lag behind, and can lose its frame when you come back to a kept place.",
@@ -4472,6 +4577,8 @@ object ControlsNote {
         val twin = "A and B are the console's A and B. Move with the left stick and aim with the right; R2 and L2 are Z, which fires."
         val two = "The left stick walks and strafes, the right stick looks, L2 aims and R2 fires; A and B are the console's. Aim and pull back to crouch."
         mapOf("turok - dinosaur hunter" to twin, "turok 2 - seeds of evil" to twin, "tsumi to batsu - hoshi no keishousha" to twin,
+            "turok 3 - shadow of oblivion" to "$twin To look up and down the other way, change Reverse Up/Down in Options, Control.",
+            "quake ii" to "$twin The d-pad moves the menus.",
             "doom 64" to "The left stick walks and strafes and the right stick turns. R2 fires and L2 runs while held; Y uses, " +
                 "X opens the map, and A and B change weapons. Too dark? Raise Brightness in Options, Display.",
             "goldeneye 007" to "Once, on the watch: style 2.4 Goodhead and Look Up/Down Upright; the save keeps them. $two The right stick moves the menus.",

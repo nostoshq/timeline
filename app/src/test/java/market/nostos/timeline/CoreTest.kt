@@ -2597,16 +2597,82 @@ class ExtrasTest {
     @Test fun shootersMadeForTheCButtonsGetTwinSticks() {
         val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
         val out = RetroPack.files(Look(), p)
-        for (stem in listOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)", "Tsumi to Batsu - Hoshi no Keishousha (Japan)")) {
+        for (stem in listOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)", "Tsumi to Batsu - Hoshi no Keishousha (Japan)",
+                "Turok 3 - Shadow of Oblivion (USA)", "Quake II (USA)")) {
             val rmp = out.getValue("remaps/Mupen64Plus-Next/$stem.rmp")
+            val (down, up) = if (stem == "Quake II (USA)") "19" to "18" else "18" to "19"      // Quake II looks up with the stick pushed up
             for (player in 1..4) for (line in listOf("input_player${player}_stk_l_x+ = \"20\"", "input_player${player}_stk_l_y- = \"23\"",
-                    "input_player${player}_stk_r_x- = \"17\"", "input_player${player}_stk_r_y+ = \"18\"", "input_player${player}_btn_r2 = \"12\""))
+                    "input_player${player}_stk_r_x- = \"17\"", "input_player${player}_stk_r_y+ = \"$down\"",
+                    "input_player${player}_stk_r_y- = \"$up\"", "input_player${player}_btn_r2 = \"12\""))
                 assertTrue(line, rmp.contains(line + "\n"))
             assertTrue(rmp.startsWith(RetroPack.n64Buttons()))         // A and B stay where the core's own remap puts them
         }
         assertTrue(out.getValue("remaps/Mupen64Plus-Next/GoldenEye 007 (USA).rmp") == RetroPack.n64DualStick())   // its own two sticks
         assertTrue(ControlsNote.of("n64", "turok - dinosaur hunter", "ra:mupen64plus_next_gles3", true, null).startsWith("A and B are the console's A and B. Move with the left stick"))
         assertTrue(ControlsNote.of("n64", "turok 2 - seeds of evil", "ra:mupen64plus_next_gles3", true, null).contains("No rumble"))
+        for (game in listOf("turok 3 - shadow of oblivion", "quake ii"))
+            assertTrue(game, ControlsNote.of("n64", game, "ra:mupen64plus_next_gles3", true, null).contains("Move with the left stick and aim with the right"))
+        assertTrue(ControlsNote.of("n64", "turok 3 - shadow of oblivion", "ra:mupen64plus_next_gles3", true, null).contains("Reverse Up/Down in Options, Control"))
+    }
+
+    @Test fun pokemonStadiumReadsTheGameBoyGamePlayedLastThroughATransferPak() {
+        assertEquals(1, TransferPak.generation("POKEMON RED\u0000\u0000\u0000\u0000\u0000"))
+        assertEquals(1, TransferPak.generation("POKEMON YELLOW\u0000\u0080"))
+        assertEquals(2, TransferPak.generation("PM_CRYSTAL\u0000BYTE\u00c0"))
+        assertEquals(2, TransferPak.generation("POKEMON_GLDAAUE\u0080"))
+        assertNull(TransferPak.generation("POKEPINBALLVPHE\u0080"))
+        val save = ByteArray(32768) { (it % 251).toByte() }
+        val checked = save.copyOf().also { for (i in 0 until 32) it[i] = (0x8c + 0x12 * i).toByte() }   // Stadium's memory check
+        assertEquals(TransferPak.mark(save), TransferPak.mark(checked))
+        assertTrue(TransferPak.mark(save) != TransferPak.mark(save.copyOf().also { it[0x2598] = 1 }))   // the game's own save moved
+        assertEquals("", TransferPak.mark(null))
+        val blank = ByteArray(32768) { 0xFF.toByte() }                           // started, never saved
+        assertFalse(TransferPak.saved(1, blank)); assertFalse(TransferPak.saved(2, blank))
+        val savedRed = blank.copyOf().also { for (i in 0x2598..0x3522) it[i] = (i * 7).toByte() }
+        savedRed[0x3523] = ((0x2598..0x3522).sumOf { savedRed[it].toInt() and 0xFF }.inv() and 0xFF).toByte()
+        assertTrue(TransferPak.saved(1, savedRed))
+        assertFalse(TransferPak.saved(1, savedRed.copyOf().also { it[0x3000] = (it[0x3000] + 1).toByte() }))
+        assertTrue(TransferPak.saved(2, blank.copyOf().also { it[0x2008] = 0x63 }))
+        assertNull(TransferPak.generation("POKEMONPC\u0000\u0000BPNE\u00c0"))      // Puzzle Challenge: not a cartridge Stadium reads
+        val red = TransferPak.Cart("gb/Red.gb", 1, 100)
+        val crystal = TransferPak.Cart("gbc/Crystal.gbc", 2, 300)
+        val yellow = TransferPak.Cart("gb/Yellow.gb", 1, 200)
+        assertEquals(yellow, TransferPak.choose(1, listOf(red, crystal, yellow)))     // Stadium: the first generation only
+        assertEquals(crystal, TransferPak.choose(2, listOf(red, crystal, yellow)))    // Stadium 2: either
+        assertNull(TransferPak.choose(1, listOf(crystal)))
+        // what Stadium changed goes back only when the Game Boy game's own save is still the one put in
+        assertEquals(TransferPak.Back.NOTHING, TransferPak.back("32768:a", "32768:a", "32768:a"))
+        assertEquals(TransferPak.Back.NOTHING, TransferPak.back("32768:a", "", "32768:a"))
+        assertEquals(TransferPak.Back.BRING, TransferPak.back("32768:a", "32768:b", "32768:a"))
+        assertEquals(TransferPak.Back.BOTH_MOVED, TransferPak.back("32768:a", "32768:b", "32768:c"))
+        // the first controller's pak: the Transfer Pak with a cartridge in, the core's usual one without
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val with = RetroPack.files(Look(transferPak = setOf("Pokemon Stadium (USA) (Rev 2)")), p)
+        assertTrue(with.getValue("Mupen64Plus-Next/Pokemon Stadium (USA) (Rev 2).opt").contains("mupen64plus-pak1 = \"transfer\""))
+        assertTrue(with.getValue("Mupen64Plus-Next/Pokemon Stadium 2 (USA).opt").contains("mupen64plus-pak1 = \"memory\""))
+        val lighter = RetroPack.files(Look(transferPak = setOf("Pokemon Stadium 2 (USA)"), lighter = mapOf("n64/Pokemon Stadium 2 (USA)" to true)), p)
+        assertTrue(lighter.getValue("Mupen64Plus-Next/Pokemon Stadium 2 (USA).opt").contains("mupen64plus-pak1 = \"transfer\""))
+        assertFalse(with.getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("transfer"))
+        assertTrue(ControlsNote.of("n64", "pokemon stadium", "ra:mupen64plus_next_gles3", false, null).contains("Transfer Pak"))
+    }
+
+    @Test fun theRestClockWandersOverAWideAreaAndDimsAtNight() {
+        val seen = HashSet<Pair<Int, Int>>()
+        val start = 29_400_000L                    // a minute in 2025
+        var before = RestDrift.at(start)
+        for (m in start until start + 7 * 24 * 60) {
+            val (x, y) = RestDrift.at(m)
+            assertTrue("$m", x in 0..RestDrift.WIDE && y in 0..RestDrift.HIGH)
+            assertTrue("$m moves a few pixels", kotlin.math.abs(x - before.first) <= 4 && kotlin.math.abs(y - before.second) <= 6)
+            seen += (x / 30) to (y / 30)
+            before = x to y
+        }
+        // in a week it has stood in nearly every 30-pixel square of the area (the far corner is reached only for a moment)
+        assertTrue(seen.size >= (RestDrift.WIDE / 30 + 1) * (RestDrift.HIGH / 30 + 1) - 2)
+        assertEquals(RestDrift.NIGHT, RestDrift.light(23 * 60), 0f)
+        assertEquals(RestDrift.NIGHT, RestDrift.light(3 * 60 + 30), 0f)
+        assertEquals(1f, RestDrift.light(7 * 60), 0f)
+        assertEquals(1f, RestDrift.light(22 * 60 + 59), 0f)
     }
 
     @Test fun goldenEyeAndPerfectDarkPlayOnTwoSticksFromOnePad() {
