@@ -434,10 +434,27 @@ class DeviceLogicTest {
         for (p in listOf(0, 5, 10, 60, 99, 100)) assertTrue(Vendor.put(Vendor.LIGHT_LEVEL, Vendor.level(p)) != null)
     }
 
+    @Test fun arcadeBoardsNearSixtyRunInStepAndRampageGoesWithoutTheBeam() {
+        val p = RetroPack.Paths("/h", "pkg", "/d", "/a")
+        val out = RetroPack.files(Look(), p, arcade = listOf("umk3", "mk2", "nbajamte", "rtype", "rampage", "sf2hf"))
+        for (core in listOf("FinalBurn Neo", "MAME 2003-Plus")) {
+            for (set in listOf("umk3", "mk2", "nbajamte", "rtype")) {
+                val c = out.getValue("$core/$set.cfg")
+                assertTrue("$core/$set", c.contains("audio_max_timing_skew = \"0.100000\""))
+                assertTrue("$core/$set keeps the beam", c.contains("video_shader_subframes = \"2\""))
+            }
+            assertTrue(out.getValue("$core/rampage.cfg").contains("video_shader_subframes = \"1\""))
+        }
+        assertFalse(out.containsKey("FinalBurn Neo/sf2hf.cfg"))
+    }
+
     @Test fun everySystemHasAPowerProfileThatUsesAMakersFanMode() {
         for (s in Catalog.systems) assertTrue(Power.default(s.id).fan in setOf(Vendor.FAN_QUIET, Vendor.FAN_SMART, Vendor.FAN_SPORT))
-        // every system plays on Performance power, so no refresh waits for the chip to speed up
-        for (s in Catalog.systems) assertEquals(s.id, 1, Power.default(s.id).performance)
+        // the systems measured steady on Standard keep the battery; the rest play on Performance power
+        for (s in Catalog.systems) assertEquals(s.id, if (s.id in Power.standard) 0 else 1, Power.default(s.id).performance)
+        for (id in listOf("nes", "snes", "genesis", "gb", "gbc", "gba", "segacd", "tg-cd")) assertEquals(id, Power.Balanced, Power.default(id))
+        for (id in listOf("arcade", "psx", "saturn", "n64", "dreamcast", "ps2", "gc", "wii", "nds", "xbox")) assertEquals(id, Power.Strong, Power.default(id))
+        for (id in Power.standard) assertTrue(id, Catalog.systems.any { it.id == id })
         assertEquals(Vendor.FAN_SMART, Power.default("snes").fan)
         for (s in Catalog.systems) assertTrue(Power.default(s.id) != Power.High)        // held near top speed only by choice
         assertEquals(0, Power.resting.performance)                                     // the launcher: Standard, Smart

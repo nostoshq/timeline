@@ -2465,7 +2465,7 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
             // One command for the service, so a script; the whole record is too long to come back through it.
             val file = File(ctx.filesDir, "frames.sh")
             val dump = if (Scripts.write(file, Stutter.READ)) Bridge.read("timeout 9 sh ${file.absolutePath}") else null
-            // 50 Hz games, and the arcade boards that ran at 54 to 55 Hz, fall unevenly on this panel's refreshes by nature.
+            // 50 Hz games, and Rampage's board, fall unevenly on this panel's refreshes by nature.
             if (g == null || g.pal || (g.system == "arcade" && g.stem.lowercase() in RetroPack.offPaceSets)) return@launch
             val s = dump?.let { Stutter.of(Stutter.histogram(it), hz, drawnOnly) } ?: return@launch
             prefs.put("stutter:$key", Stutter.format(s, System.currentTimeMillis()))

@@ -1550,12 +1550,19 @@ enum class Power(val label: String, val performance: Int, val fan: Int, val note
 
     companion object {
         /**
-         * Every system plays on Strong. On Standard power the chip drops its clocks between bursts of work and is still
-         * speeding up when the next one comes: on a Retroid Pocket Nova, New Tetris's demo missed 8 to 175 refreshes in
-         * each 30 s on Standard and none in 60 s on Performance, and under the beam or black frames each missed refresh is
-         * a visible flicker. The launcher itself rests on Standard.
+         * The cartridge consoles, the handhelds and the CD add-ons play on Balanced; everything else on Strong. On Standard
+         * power the chip drops its clocks between bursts of work and is still speeding up when the next one comes: on a
+         * Retroid Pocket Nova, New Tetris's demo missed 8 to 175 refreshes in each 30 s on Standard and none in 60 s on
+         * Performance, and Sega Rally on the Saturn missed 538 in 60 s on Standard. Under the beam or black frames each
+         * missed refresh is a visible flicker. The lighter systems missed none in 60 s on Standard with the beam (Contra,
+         * Donkey Kong Country, Gunstar Heroes, Avenging Spirit, Aria of Sorrow, Enduro, Blazing Lazers, Lords of Thunder,
+         * Robo Aleste), so they keep the battery. Arcade stays on Strong: its boards run from light to heavy. The launcher
+         * itself rests on Standard.
          */
-        fun default(@Suppress("UNUSED_PARAMETER") system: String): Power = Strong
+        fun default(system: String): Power = if (system in standard) Balanced else Strong
+        /** The systems measured steady on Standard power, and those sharing their emulators (Master System, Game Gear, Game Boy Color). */
+        val standard: Set<String> = setOf("atari2600", "nes", "mastersystem", "tg16", "genesis", "gb", "tg-cd", "snes",
+            "gamegear", "segacd", "gbc", "gba")
         /** In the launcher, and anywhere no game is running: Standard power and the Smart fan. */
         val resting = Balanced
         fun named(label: String): Power? = entries.firstOrNull { it.label == label }
@@ -3221,9 +3228,17 @@ object RetroPack {
             for ((system, stem) in pal) if (system in systems && (look.subframes || look.blackFrames))
                 out["$core/$stem.cfg"] = cfg(mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0"))
         }
-        // Arcade boards that do not run near 60 pictures a second get the same treatment as 50 Hz games.
-        if (look.subframes || look.blackFrames) for (set in arcade) if (set.lowercase() in offPaceSets)
-            out["FinalBurn Neo/$set.cfg"] = cfg(mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0"))
+        // Arcade boards that ran at 54.7 or 55 pictures a second (Midway's, Irem's M72) keep the beam and run in step with
+        // the screen, about a tenth faster than the board: RetroArch follows the screen when the two are within the timing
+        // skew, so it is widened to 10% for them alone. Measured on a Retroid Pocket Nova: Mortal Kombat 3 with the beam at
+        // its own 54.7 missed 505 to 634 refreshes a minute (a flicker each), and none in step. Rampage's board is too far
+        // off for that, so it goes without the beam as 50 Hz games do. Both arcade cores, whichever the game is set to; the
+        // beam is spelled out because these files are merged into, and an older one said to go without it.
+        for (set in arcade) for (core in listOf("FinalBurn Neo", "MAME 2003-Plus")) when (set.lowercase()) {
+            in inStepSets -> out["$core/$set.cfg"] = cfg(motion + mapOf("audio_max_timing_skew" to "0.100000"))
+            in offPaceSets -> if (look.subframes || look.blackFrames)
+                out["$core/$set.cfg"] = cfg(mapOf("video_shader_subframes" to "1", "video_black_frame_insertion" to "0"))
+        }
         val lcd = lcds[look.handheld]?.let { "#reference \"${p.slang}/$it\"\n" }
         val trueLcd = look.handheld == TRUE_LCD
         for (core in handhelds.keys) {
@@ -3529,11 +3544,11 @@ object RetroPack {
             // The right stick's pointer shown for three seconds after it moves: Android builds hide it, so it moved unseen.
             "melonds_show_cursor" to "timeout", "melonds_cursor_timeout" to "3")
 
-    /**
-     * Arcade sets whose boards run well away from 60 pictures a second (Midway's at 54.7, Irem's M72 at 55, Rampage
-     * at 30), in every known variant. Motion clarity is timed for 60, so they go without it.
-     */
-    val offPaceSets: Set<String> = setOf("mk", "mk2", "umk3", "nbajam", "nbajamte", "rtype", "rtype2", "rampage")
+    /** Arcade sets whose boards ran at 54.7 (Midway's) or 55 (Irem's M72) pictures a second: they run in step at 60. */
+    val inStepSets: Set<String> = setOf("mk", "mk2", "umk3", "nbajam", "nbajamte", "rtype", "rtype2")
+
+    /** Arcade sets whose boards run too far from 60 to be brought in step: motion clarity is timed for 60, so they go without it. */
+    val offPaceSets: Set<String> = setOf("rampage")
 
     /** Sets the owned keys in an existing config text and leaves every other line exactly as it was. */
     fun merge(existing: String, owned: Map<String, String>): String {

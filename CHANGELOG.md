@@ -17,10 +17,15 @@
   controls' numbers, so RetroArch gave each of them the built-in layout. Settings, Controls, Controllers teaches one
   its buttons a button at a time, and RetroArch and Dolphin know it by name from then on. Other devices keep
   RetroArch's own controller files.
-- **Every console plays on Strong power** (with Power and fan by system on). On Standard power the chip slows between
-  bursts of work, and a refresh can be missed while it speeds up again: a flicker under the beam simulator. On a
+- **Strong power for the 3D consoles and arcade** (with Power and fan by system on). On Standard power the chip slows
+  between bursts of work, and a refresh can be missed while it speeds up again: a flicker under the beam simulator. On a
   Retroid Pocket Nova, New Tetris's demo missed 8 to 175 refreshes in each 30 seconds on Standard and none in 60 seconds
-  on Performance.
+  on Performance. The cartridge consoles, the handhelds and the CD add-ons missed none on Standard, so they stay on
+  Balanced and keep the battery.
+- **Mortal Kombat, NBA Jam and R-Type keep the beam simulator.** Their boards ran at 54.7 and 55 pictures a second,
+  which fell unevenly on a 120 Hz screen and flickered under the beam. They now run in step with the screen, about a
+  tenth faster than the arcade did, on FinalBurn Neo and MAME 2003-Plus alike. Rampage, too far off for that, plays
+  without it.
 - **The New Tetris without bars.** Its backgrounds showed a bright bar every few lines. GLideN64's own fixes now remove
   the joins between the strips they are drawn in, and its own preset blends its 298 lines onto the television's 237 as
   the console's video chip did.
