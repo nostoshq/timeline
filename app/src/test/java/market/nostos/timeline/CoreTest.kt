@@ -1149,6 +1149,14 @@ class ExtrasTest {
         val light = DolphinPack.docs(Look(lighterCodes = mapOf("SX4E01" to true, "GM4E01" to false)), "Android/1/Retroid Pocket Controller")
         assertEquals(mapOf("InternalResolution" to "1"), light.first { it.path == "GameSettings/SX4E01.ini" && it.set.isNotEmpty() }.set["Video_Settings"])
         assertEquals(setOf("InternalResolution"), light.first { it.path == "GameSettings/GM4E01.ini" }.remove["Video_Settings"])
+        // the heaviest GameCube games at twice with the sharper look; run lighter, the console's own; plain look, the line out
+        for (id in DolphinPack.twoTimes) {
+            fun res(look: Look) = DolphinPack.docs(look, null).filter { it.path == "GameSettings/$id.ini" }
+            assertEquals("2", res(Look()).firstNotNullOf { it.set["Video_Settings"]?.get("InternalResolution") })
+            assertEquals("1", res(Look(lighterCodes = mapOf(id to true))).firstNotNullOf { it.set["Video_Settings"]?.get("InternalResolution") })
+            assertEquals("2", res(Look(lighterCodes = mapOf(id to false))).firstNotNullOf { it.set["Video_Settings"]?.get("InternalResolution") })
+            assertTrue(res(Look(sharp = false)).any { it.remove["Video_Settings"]?.contains("InternalResolution") == true })
+        }
         val bare = DolphinPack.docs(Look(), null)
         assertTrue(bare.none { it.path.startsWith("Config/Profiles") })
         val g2 = bare.first { it.path == "GameSettings/G.ini" }.text!!
@@ -2592,6 +2600,18 @@ class ExtrasTest {
             assertTrue(line, opt.contains(line))
         // every other game keeps GLideN64's own
         assertFalse(RetroPack.files(Look(), p).getValue("Mupen64Plus-Next/Mupen64Plus-Next.opt").contains("EnableTexCoordBounds = \"True\""))
+    }
+
+    @Test fun theEmulatorsBusiestThreadsAreFoundForTheFastestCores() {
+        fun stat(tid: Int, name: String, user: Long, sys: Long) = "$tid ($name) S 1 1 0 0 -1 4194624 100 0 0 0 $user $sys 0 0 10 -10 30 0 5"
+        val before = mapOf("10" to stat(10, "Thread-3", 1000, 50), "11" to stat(11, "Thread-3", 200, 10),
+            "12" to stat(12, "Audio Track (x)", 5000, 0), "13" to stat(13, "binder:1_2", 30, 30))
+        val after = mapOf("10" to stat(10, "Thread-3", 1160, 60), "11" to stat(11, "Thread-3", 230, 12),
+            "12" to stat(12, "Audio Track (x)", 5001, 0), "13" to stat(13, "binder:1_2", 30, 30), "14" to stat(14, "new", 0, 0))
+        assertEquals(listOf("10", "11"), FastCore.busiest(before, after))       // by work between the readings, names with spaces too
+        assertEquals(1060L, FastCore.used(stat(10, "Thread-3", 1000, 60)))
+        assertNull(FastCore.used("garbage"))
+        assertTrue("saturn" in FastCore.systems && "n64" in FastCore.systems && "gc" !in FastCore.systems)
     }
 
     @Test fun shootersMadeForTheCButtonsGetTwinSticks() {

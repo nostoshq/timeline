@@ -50,6 +50,13 @@
   aim with the right. Quake II looks up with the stick pushed up; it has no setting of its own for that.
 - **Test starts keep to themselves.** A start made by a test tool (`--ez test true`) now keeps RetroArch's saves and
   places in Timeline/testsaves, leaves the player's saves alone and is not counted as play.
+- **The 3D consoles on the fastest cores.** On Retroid handhelds, once a Nintendo 64, Saturn, Dreamcast or PlayStation
+  game has loaded, RetroArch's two busiest threads move to the chip's fastest cores. Android had kept them on the
+  middle cores, where Sega Rally Championship ran at about 54 pictures a second and flickered under the beam
+  simulator; on the fastest cores it missed 3 refreshes in 20 seconds instead of about 200.
+- **The heaviest GameCube games at twice the detail** with the sharper look: Rogue Leader, Metroid Prime, Super Mario
+  Sunshine, F-Zero GX, The Wind Waker and Twilight Princess, which missed refreshes at three times. The tube after
+  them is still drawn at the panel's full resolution.
 
 ## 1.9.1
 

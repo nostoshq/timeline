@@ -768,6 +768,16 @@ object DolphinPack {
     }
 
     /**
+     * GameCube games drawn at twice the console's detail rather than three times, with the sharper look on (the tube
+     * after them still at the panel's full resolution). The sweep of the heaviest games on a Retroid Pocket Nova
+     * (2026-11-26, 60 s each at Strong power, after an hour of 3D games back to back): at three times Rogue Leader held
+     * 180 pictures a refresh too long in its opening flight, Metroid Prime about 650 (on time on average, unevenly), Mario
+     * Sunshine about 270, F-Zero GX about 30 with the handheld at 79 degrees, Twilight Princess about 35 and Wind Waker 22.
+     * Smooth motion comes before detail; twice also runs cooler.
+     */
+    val twoTimes: Set<String> = setOf("GSWE64", "GZLE01", "GM8E01", "GFZE01", "GMSE01", "GZ2E01")
+
+    /**
      * Fixes a game needs that Dolphin's own game settings do not already make, from the Dolphin wiki's game pages and
      * its bug tracker (gathered 2026-10-28 and 2026-11-02; disc IDs read from the games themselves). Each is the documented setting:
      * copies kept in memory where a game reads them back (lens flares, credits, transitions), a safe texture cache
@@ -1035,8 +1045,14 @@ object DolphinPack {
         for (id in warnsAtStart) out += Doc("GameSettings/$id.ini", set = mapOf("Dolphin.Interface" to mapOf("UsePanicHandlers" to "False")))
         for ((id, fix) in gameFixes) out += Doc("GameSettings/$id.ini", set = fix)
         // "Run lighter": that one game at the console's own resolution; switched back off, the line is taken out again.
-        for ((id, light) in look.lighterCodes) out += if (light) Doc("GameSettings/$id.ini", set = mapOf("Video_Settings" to mapOf("InternalResolution" to "1")))
+        for ((id, light) in look.lighterCodes) if (id !in twoTimes) out += if (light) Doc("GameSettings/$id.ini", set = mapOf("Video_Settings" to mapOf("InternalResolution" to "1")))
             else Doc("GameSettings/$id.ini", remove = mapOf("Video_Settings" to setOf("InternalResolution")))
+        // [twoTimes]: twice with the sharper look, the console's own when run lighter, and the line out again with the plain look.
+        for (id in twoTimes) out += when {
+            look.lighterCodes[id] == true -> Doc("GameSettings/$id.ini", set = mapOf("Video_Settings" to mapOf("InternalResolution" to "1")))
+            look.sharp -> Doc("GameSettings/$id.ini", set = mapOf("Video_Settings" to mapOf("InternalResolution" to "2")))
+            else -> Doc("GameSettings/$id.ini", remove = mapOf("Video_Settings" to setOf("InternalResolution")))
+        }
         // A game that would not start with Vulkan: that one game drawn with OpenGL; switched back, the line is taken out.
         // A game drawn with OpenGL also prepares its shaders the plain way: Dolphin's hybrid ubershaders crash in the
         // Adreno OpenGL driver (Dolphin bug 12791); its shaders are still all made before the game starts.
@@ -4339,6 +4355,33 @@ object TransferPak {
         ownNow == putIn -> Back.BRING
         else -> Back.BOTH_MOVED
     }
+}
+
+/**
+ * The emulator's busiest threads on the fastest cores (2026-11-26). On a Retroid Pocket Nova, Sega Rally Championship on the Saturn ran at about
+ * 54 pictures a second, a tenth of the screen's refreshes missed (each a flash under the beam), on its still title as
+ * much as in its race, with its emulation thread only half busy: Android kept it on the middle cores, near 2.3 GHz,
+ * where the work for each picture did not always fit. Pinned to the prime core (cpu7, 3.19 GHz), 3 refreshes were
+ * missed in 20 seconds instead of about 200, and World Driver Championship at eight times missed none in a minute
+ * instead of 10. None of the core's own settings changed it (deinterlacer, mid-frame sync, CD cache, SH2 JIT, the beam
+ * off: 186 to 201 missed in 20 seconds each). RetroArch's 3D consoles only; the second busiest thread, the core's
+ * helper, gets a fast core of its own beside it.
+ */
+object FastCore {
+    val systems: Set<String> = setOf("n64", "saturn", "dreamcast", "psx")
+    const val FIRST = "80"        // cpu7, the prime core
+    const val SECOND = "40"       // cpu6
+
+    /** The processor time a thread has used, from its /proc stat line: user and system time, counted after its bracketed name. */
+    fun used(stat: String): Long? {
+        val rest = stat.substringAfterLast(')').trim().split(' ')
+        return (rest.getOrNull(11)?.toLongOrNull() ?: return null) + (rest.getOrNull(12)?.toLongOrNull() ?: return null)
+    }
+
+    /** The two threads that used the most between two readings, busiest first. */
+    fun busiest(before: Map<String, String>, after: Map<String, String>): List<String> =
+        after.mapNotNull { (tid, s) -> val a = used(s) ?: return@mapNotNull null; tid to a - (before[tid]?.let(::used) ?: a) }
+            .filter { it.second > 0 }.sortedByDescending { it.second }.take(2).map { it.first }
 }
 
 /**

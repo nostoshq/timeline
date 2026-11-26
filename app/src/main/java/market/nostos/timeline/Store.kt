@@ -33,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -816,6 +817,9 @@ sealed interface Screen {
     data class Naming(val title: String) : Screen
     data object Nostos : Screen
 }
+
+/** Work that must outlive the launcher's screen while a game is in front ([AppState.fastCore]). */
+private val pinScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 class AppState(val ctx: Context, private val scope: CoroutineScope) {
     val prefs = Prefs(ctx)
@@ -3474,7 +3478,36 @@ class AppState(val ctx: Context, private val scope: CoroutineScope) {
                 savePlays()
             }
             devicePlay(g)
+            if (retro && g.system in FastCore.systems) fastCore(g.key, plan.pkg)
         }
+    }
+
+    /**
+     * [FastCore]: once the game has loaded, RetroArch's two busiest threads go on the fastest cores, through the maker's
+     * service (root). Again a minute later, in case loading was the busiest work at first. Only while that game is open.
+     */
+    private fun fastCore(key: String, pkg: String) {
+        // Not the screen's scope: that can end while the game is in front. The guard service keeps the launcher running.
+        pinScope.launch {
+            for (wait in listOf(20_000L, 60_000L)) {
+                delay(wait)
+                if (prefs.str("playing").substringBefore('\n') != key) return@launch
+                runCatching { pinBusiest(pkg) }.onFailure { android.util.Log.w("TimelinePin", "failed", it) }
+            }
+        }
+    }
+
+    private suspend fun pinBusiest(pkg: String) {
+        val pid = Bridge.read("pidof $pkg")?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.toIntOrNull() ?: return
+        // The service hands back one line: the thread ids side by side.
+        val tids = Bridge.read("ls -x -w 100000 /proc/$pid/task").orEmpty().split(Regex("\\s+")).filter { it.isNotEmpty() && it.all(Char::isDigit) }
+        fun stats() = tids.associateWith { Bridge.read("cat /proc/$pid/task/$it/stat").orEmpty() }
+        val before = stats()
+        delay(3_000)
+        val top = FastCore.busiest(before, stats())
+        android.util.Log.i("TimelinePin", "pid $pid threads ${tids.size} busiest $top")
+        top.getOrNull(0)?.let { Bridge.run("taskset -p ${FastCore.FIRST} $it") }
+        top.getOrNull(1)?.let { Bridge.run("taskset -p ${FastCore.SECOND} $it") }
     }
 
     // ---- a game still open in an emulator of its own ---------------------------------------------
