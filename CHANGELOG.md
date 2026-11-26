@@ -54,9 +54,11 @@
   game has loaded, RetroArch's two busiest threads move to the chip's fastest cores. Android had kept them on the
   middle cores, where Sega Rally Championship ran at about 54 pictures a second and flickered under the beam
   simulator; on the fastest cores it missed 3 refreshes in 20 seconds instead of about 200.
-- **The heaviest GameCube games at twice the detail** with the sharper look: Rogue Leader, Metroid Prime, Super Mario
-  Sunshine, F-Zero GX, The Wind Waker and Twilight Princess, which missed refreshes at three times. The tube after
-  them is still drawn at the panel's full resolution.
+- **The heaviest GameCube games at twice the detail** with the sharper look: Rogue Leader, Metroid Prime, F-Zero GX,
+  The Wind Waker and Twilight Princess, which missed refreshes at three times. The tube after them is still drawn at
+  the panel's full resolution.
+- **Battle for Naboo at four times** on the Nintendo 64, like Pokémon Snap and GoldenEye: at eight its 3D opening
+  missed refreshes.
 - **The World Is Not Enough shows Bond's gun.** His hands and weapon were missing, flickering in now and then. GLideN64
   now draws them at the depth the game asks for, in front of the scene.
 

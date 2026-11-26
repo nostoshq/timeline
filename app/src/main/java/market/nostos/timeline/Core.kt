@@ -770,12 +770,14 @@ object DolphinPack {
     /**
      * GameCube games drawn at twice the console's detail rather than three times, with the sharper look on (the tube
      * after them still at the panel's full resolution). The sweep of the heaviest games on a Retroid Pocket Nova
-     * (2026-11-26, 60 s each at Strong power, after an hour of 3D games back to back): at three times Rogue Leader held
-     * 180 pictures a refresh too long in its opening flight, Metroid Prime about 650 (on time on average, unevenly), Mario
-     * Sunshine about 270, F-Zero GX about 30 with the handheld at 79 degrees, Twilight Princess about 35 and Wind Waker 22.
-     * Smooth motion comes before detail; twice also runs cooler.
+     * (2026-11-26, 60 s each through the launcher at Strong power, after an hour of 3D games back to back): at three
+     * times Rogue Leader held 180 pictures a refresh too long in its opening flight, Metroid Prime about 650 (on time
+     * on average, unevenly), F-Zero GX about 30 with the handheld at 79 degrees, Twilight Princess about 35 and Wind
+     * Waker 22; at twice Rogue Leader held 15. Smooth motion comes before detail. Twice also runs cooler. Mario
+     * Sunshine held about 270 at three times and as many at twice (its 30 pictures a second land a refresh early or
+     * late either way), so it keeps three times.
      */
-    val twoTimes: Set<String> = setOf("GSWE64", "GZLE01", "GM8E01", "GFZE01", "GMSE01", "GZ2E01")
+    val twoTimes: Set<String> = setOf("GSWE64", "GZLE01", "GM8E01", "GFZE01", "GZ2E01")
 
     /**
      * Fixes a game needs that Dolphin's own game settings do not already make, from the Dolphin wiki's game pages and
@@ -3070,8 +3072,10 @@ object RetroPack {
      * GoldenEye's watch reads the game's picture back the same way, for the background behind it: at eight times 16% of
      * its pictures came late, one refresh in seven missed, and the black frames between pictures slipped with them, a
      * flicker in its menus (its levels themselves held eight with none late).
+     * Battle for Naboo's 3D opening missed 37 refreshes a minute at eight times (2026-11-26) and none in 75 seconds at
+     * four.
      */
-    val n64FourTimes: Set<String> = setOf("Pokemon Snap (USA)", "GoldenEye 007 (USA)")
+    val n64FourTimes: Set<String> = setOf("Pokemon Snap (USA)", "GoldenEye 007 (USA)", "Star Wars Episode I - Battle for Naboo (USA)")
 
     /**
      * Nintendo 64 games that draw more lines than the television shows, which the video chip blended together as it
