@@ -57,6 +57,8 @@
 - **The heaviest GameCube games at twice the detail** with the sharper look: Rogue Leader, Metroid Prime, Super Mario
   Sunshine, F-Zero GX, The Wind Waker and Twilight Princess, which missed refreshes at three times. The tube after
   them is still drawn at the panel's full resolution.
+- **The World Is Not Enough shows Bond's gun.** His hands and weapon were missing, flickering in now and then. GLideN64
+  now draws them at the depth the game asks for, in front of the scene.
 
 ## 1.9.1
 

@@ -2749,6 +2749,7 @@ class ExtrasTest {
         assertFalse(files.getValue("Mupen64Plus-Next/Banjo-Tooie (USA).opt").contains("CountPerOpDenomPot"))
         assertTrue(files.getValue("Mupen64Plus-Next/Jet Force Gemini (USA).opt").contains("mupen64plus-CountPerOpDenomPot = \"2\""))
         assertTrue(files.getValue("Mupen64Plus-Next/Banjo-Tooie (USA).opt").contains("mupen64plus-EnableFBEmulation = \"False\""))
+        assertTrue(files.getValue("Mupen64Plus-Next/007 - The World Is Not Enough (USA).opt").contains("mupen64plus-EnableFragmentDepthWrite = \"True\""))
         assertTrue(files.getValue("Mupen64Plus-Next/Banjo-Tooie (USA).opt").contains("mupen64plus-pak1 = \"rumble\""))
         assertTrue(files.getValue("Mupen64Plus-Next/GoldenEye 007 (USA).opt").contains("mupen64plus-43screensize = \"1280x960\""))
         // a second player's controller: the usual controls, the finer stick still

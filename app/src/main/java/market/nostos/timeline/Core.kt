@@ -3035,6 +3035,10 @@ object RetroPack {
             // depth copies off and no frame duplication did not cure it, emulation off did. The picture keeps its size and
             // place and fills the thin border.
             "Banjo-Tooie (USA)" to mapOf("mupen64plus-EnableFBEmulation" to "False"),
+            // The World Is Not Enough's gun and hands were missing, flickering in now and then. The core leaves GLideN64's
+            // fragment depth off on phones; on, the gun is drawn at the depth the game asks for, in front of the scene (seen on
+            // a Retroid Pocket Nova in two of its demos, none of 3,578 refreshes late).
+            "007 - The World Is Not Enough (USA)" to mapOf("mupen64plus-EnableFragmentDepthWrite" to "True"),
             // The console's processor run faster, for the two shooters' slowdown. On a Retroid Pocket Nova, from places in
             // each game, the same 15 s of turning each time, frames counted from each game's own frame counter
             // (GoldenEye's frametiming.c, Perfect Dark's g_Vars): GoldenEye 39.5 a second at the usual speed, 51.5 at twice,
