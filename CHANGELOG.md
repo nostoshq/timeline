@@ -47,13 +47,19 @@
   what Stadium changes goes back into that game's save. A game started but never saved
   is passed over, since Stadium cannot read it.
 - **Turok 3 and Quake II on two sticks**, with Nintendo 64 shooters: modern controls on: walk with the left stick and
-  aim with the right. Quake II looks up with the stick pushed up; it has no setting of its own for that.
+  aim with the right. Quake II and Turok 3 look up with the stick pushed up (Turok 3's Reverse Up/Down still turns
+  it back).
 - **Test starts keep to themselves.** A start made by a test tool (`--ez test true`) now keeps RetroArch's saves and
   places in Timeline/testsaves, leaves the player's saves alone and is not counted as play.
-- **The 3D consoles on the fastest cores.** On Retroid handhelds, once a Nintendo 64, Saturn, Dreamcast or PlayStation
-  game has loaded, RetroArch's two busiest threads move to the chip's fastest cores. Android had kept them on the
-  middle cores, where Sega Rally Championship ran at about 54 pictures a second and flickered under the beam
-  simulator; on the fastest cores it missed 3 refreshes in 20 seconds instead of about 200.
+- **The 3D consoles on the fastest cores.** On Retroid handhelds, once a Nintendo 64, Saturn, Dreamcast, PlayStation,
+  GameCube, Wii or PlayStation 2 game has loaded, the emulator's two busiest threads move to the chip's fastest cores,
+  and are looked at again as the game plays. Android had kept them on the middle cores, where Sega Rally Championship
+  ran at about 54 pictures a second and flickered under the beam simulator, Crazy Taxi stuttered, and Skyward Sword,
+  Super Mario Sunshine and Xenoblade Chronicles put about one picture in five a refresh early or late. On the fastest
+  cores Sega Rally and Crazy Taxi miss none, and the three Dolphin games about one in a hundred.
+- **The fan steps up sooner.** With Power and fan by system on, the fan goes from Smart to Sport at 75°C on the chip
+  rather than 80, and back to Smart once it has stayed at 65°C or under for a minute. The Smart fan alone barely
+  speeds up as the chip heats.
 - **The heaviest GameCube games at twice the detail** with the sharper look: Rogue Leader, Metroid Prime, F-Zero GX,
   The Wind Waker and Twilight Princess, which missed refreshes at three times. The tube after them is still drawn at
   the panel's full resolution.

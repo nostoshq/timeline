@@ -1592,9 +1592,12 @@ enum class Power(val label: String, val performance: Int, val fan: Int, val note
  * and never below the mode the system's profile asked for. It watches two things, every ten seconds while a game runs:
  * the hottest processor or graphics sensor, which is what slows a game down (the Nova's graphics slow themselves at
  * 95°C, its processor at 108°C), and the battery, which is what wears (Retroid's own guard starts at 53°C). Up at
- * 80°C on the chip or 45°C on the battery, two readings running; down once the chip is at or under 68°C and the battery
+ * 75°C on the chip or 45°C on the battery, two readings running; down once the chip is at or under 65°C and the battery
  * at or under 41°C, six readings running, so the fan does not hunt between modes. (A battery charging while a game runs
- * sits around 40°C; the marks are above that, so charging alone does not hold the fan on Sport.)
+ * sits around 40°C; the marks are above that, so charging alone does not hold the fan on Sport.) The Smart fan alone
+ * moves little: logged 2026-11-26, its duty went from 12,000 to about 15,000 of 25,000 as the chip climbed to 82°C, and
+ * Jak and Daxter took the prime core to 86°C within a minute; the chip never lowered its top clock. Up at 75°C rather
+ * than 80 keeps the heavy stretches in the 70s, and the fan back on Smart once they pass.
  */
 class HeatGuard(private val base: Int) {
     private val ladder = listOf(Vendor.FAN_QUIET, Vendor.FAN_SMART, Vendor.FAN_SPORT)
@@ -1604,8 +1607,8 @@ class HeatGuard(private val base: Int) {
         private set
 
     companion object {
-        const val CHIP_HOT = 80f
-        const val CHIP_COOL = 68f
+        const val CHIP_HOT = 75f
+        const val CHIP_COOL = 65f
         const val BATTERY_HOT = 45f
         const val BATTERY_COOL = 41f
     }
@@ -3128,11 +3131,13 @@ object RetroPack {
         "Tsumi to Batsu - Hoshi no Keishousha (Japan)", "Turok 3 - Shadow of Oblivion (USA)", "Quake II (USA)")
 
     /**
-     * [twinStick] games that look the flight-stick way, stick forward to look down, with no option to turn it: Quake II
-     * (seen on a Nova, 2026-11-26; its Configure page offers presets only, and its manual has no such option). Their
+     * [twinStick] games that look the flight-stick way, stick forward to look down: Quake II, with no option to turn it
+     * (seen on a Nova, 2026-11-26; its Configure page offers presets only, and its manual has none). Their
      * remap swaps the right stick's up and down.
+     * Turok 3 the same: in its first level the stick pushed up looked down (seen 2026-11-26); its own Reverse Up/Down
+     * still turns it back.
      */
-    val lookTurned: Set<String> = setOf("Quake II (USA)")
+    val lookTurned: Set<String> = setOf("Quake II (USA)", "Turok 3 - Shadow of Oblivion (USA)")
 
     /**
      * [twinStick]'s controls, every player: the left stick is the C buttons (the core's right stick) and the right stick is
@@ -4372,11 +4377,13 @@ object TransferPak {
  * where the work for each picture did not always fit. Pinned to the prime core (cpu7, 3.19 GHz), 3 refreshes were
  * missed in 20 seconds instead of about 200, and World Driver Championship at eight times missed none in a minute
  * instead of 10. None of the core's own settings changed it (deinterlacer, mid-frame sync, CD cache, SH2 JIT, the beam
- * off: 186 to 201 missed in 20 seconds each). RetroArch's 3D consoles only; the second busiest thread, the core's
- * helper, gets a fast core of its own beside it.
+ * off: 186 to 201 missed in 20 seconds each). The second busiest thread, the core's helper, gets a fast core of its own
+ * beside it. Dolphin the same: Skyward Sword's 30 pictures a second landed a refresh early or late about one in five
+ * (Sunshine and Xenoblade alike, at any detail and with VSync on), and with its video and CPU threads pinned 7 in 30
+ * seconds instead of about 200. So RetroArch's 3D consoles, Dolphin and ARMSX2.
  */
 object FastCore {
-    val systems: Set<String> = setOf("n64", "saturn", "dreamcast", "psx")
+    val systems: Set<String> = setOf("n64", "saturn", "dreamcast", "psx", "gc", "wii", "ps2")
     const val FIRST = "80"        // cpu7, the prime core
     const val SECOND = "40"       // cpu6
 
@@ -4390,6 +4397,26 @@ object FastCore {
     fun busiest(before: Map<String, String>, after: Map<String, String>): List<String> =
         after.mapNotNull { (tid, s) -> val a = used(s) ?: return@mapNotNull null; tid to a - (before[tid]?.let(::used) ?: a) }
             .filter { it.second > 0 }.sortedByDescending { it.second }.take(2).map { it.first }
+
+    /**
+     * When to look again, counted from the start: soon after loading, twice more as the game settles (loading can be the
+     * busiest work at first, and a scene can change which thread works hardest), then every [EVERY] while it plays.
+     */
+    val checks: List<Long> = listOf(15_000L, 30_000L, 45_000L)
+    const val EVERY = 180_000L
+
+    /** A thread's mask from taskset's "pid 123's current affinity mask: f8". */
+    fun mask(taskset: String): String? =
+        taskset.substringAfter("mask:", "").trim().takeIf { m -> m.isNotEmpty() && m.all { it in '0'..'9' || it in 'a'..'f' } }
+
+    /**
+     * What to change at a check: the busiest thread to [FIRST] and the next to [SECOND], and each thread pinned at an
+     * earlier check that is no longer one of the two back to the mask it had before ([pinned]: thread to that mask).
+     */
+    fun plan(top: List<String>, pinned: Map<String, String>): Pair<Map<String, String>, Map<String, String>> {
+        val want = top.take(2).zip(listOf(FIRST, SECOND)).toMap()
+        return want to pinned.filterKeys { it !in want }
+    }
 }
 
 /**

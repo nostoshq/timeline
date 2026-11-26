@@ -1422,7 +1422,7 @@ private fun menu(app: AppState, id: String): MenuDef = when {
             },
             Item("Profiles by system", "", "Light, Balanced, Strong or High for each system.", onA = { app.push(Screen.Menu("power")) }),
             app.toggle("Heat guard", "dev.guard", false,
-                if (d.canPower) "While a game runs, reads the chip's and the battery's temperature every ten seconds. The fan steps up a mode at 80°C on the chip " +
+                if (d.canPower) "While a game runs, reads the chip's and the battery's temperature every ten seconds. The fan steps up a mode at 75°C on the chip " +
                     "(it would slow itself at 95°C) or 45°C on the battery, and back down once both have cooled. " +
                     "Only the maker's Quiet, Smart and Sport, never off and never a raw speed. Needs Power and fan by system." else none),
             Item("Battery", "", "Charging, sleep and power off, and the battery's health.", onA = { app.push(Screen.Menu("battery")) }),

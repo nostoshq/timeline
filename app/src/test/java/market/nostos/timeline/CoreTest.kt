@@ -516,7 +516,7 @@ class DeviceLogicTest {
         repeat(30) { assertEquals(Vendor.FAN_SMART, strong.next(50f, 30f)) }
         assertEquals(Vendor.FAN_SMART, strong.next(Float.NaN, Float.NaN)) // no reading changes nothing
         strong.next(85f)                                                 // the chip alone, no battery reading
-        assertEquals(Vendor.FAN_SMART, strong.next(75f))                 // a warm reading between the marks breaks the hot streak
+        assertEquals(Vendor.FAN_SMART, strong.next(70f))                 // a warm reading between the marks breaks the hot streak
         strong.next(85f)
         assertEquals(Vendor.FAN_SPORT, strong.next(Float.NaN, 46f))      // the battery alone, no chip reading
     }
@@ -2611,7 +2611,13 @@ class ExtrasTest {
         assertEquals(listOf("10", "11"), FastCore.busiest(before, after))       // by work between the readings, names with spaces too
         assertEquals(1060L, FastCore.used(stat(10, "Thread-3", 1000, 60)))
         assertNull(FastCore.used("garbage"))
-        assertTrue("saturn" in FastCore.systems && "n64" in FastCore.systems && "gc" !in FastCore.systems)
+        assertTrue("saturn" in FastCore.systems && "gc" in FastCore.systems && "ps2" in FastCore.systems && "snes" !in FastCore.systems)
+        assertEquals("f8", FastCore.mask("pid 8062's current affinity mask: f8"))
+        assertNull(FastCore.mask("taskset: sched_getaffinity: No such process"))
+        // first check: both pinned; later the second busiest changes: the old one gets its own mask back
+        assertEquals(mapOf("10" to "80", "11" to "40") to emptyMap<String, String>(), FastCore.plan(listOf("10", "11"), emptyMap()))
+        assertEquals(mapOf("10" to "80", "12" to "40") to mapOf("11" to "f8"), FastCore.plan(listOf("10", "12"), mapOf("10" to "f8", "11" to "f8")))
+        assertEquals(emptyMap<String, String>() to mapOf("10" to "ff"), FastCore.plan(emptyList(), mapOf("10" to "ff")))
     }
 
     @Test fun shootersMadeForTheCButtonsGetTwinSticks() {
@@ -2620,7 +2626,7 @@ class ExtrasTest {
         for (stem in listOf("Turok - Dinosaur Hunter (USA) (Rev 2)", "Turok 2 - Seeds of Evil (USA) (Rev 1)", "Tsumi to Batsu - Hoshi no Keishousha (Japan)",
                 "Turok 3 - Shadow of Oblivion (USA)", "Quake II (USA)")) {
             val rmp = out.getValue("remaps/Mupen64Plus-Next/$stem.rmp")
-            val (down, up) = if (stem == "Quake II (USA)") "19" to "18" else "18" to "19"      // Quake II looks up with the stick pushed up
+            val (down, up) = if (stem in RetroPack.lookTurned) "19" to "18" else "18" to "19"      // Quake II looks up with the stick pushed up
             for (player in 1..4) for (line in listOf("input_player${player}_stk_l_x+ = \"20\"", "input_player${player}_stk_l_y- = \"23\"",
                     "input_player${player}_stk_r_x- = \"17\"", "input_player${player}_stk_r_y+ = \"$down\"",
                     "input_player${player}_stk_r_y- = \"$up\"", "input_player${player}_btn_r2 = \"12\""))
